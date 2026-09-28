@@ -1,0 +1,236 @@
+{
+  "title": "Inside the relay · one Worker, two routes, one secret each",
+  "grid": {
+    "col": 300,
+    "row": 200
+  },
+  "zones": [
+    {
+      "id": "gf",
+      "label": "Grafana, any instance",
+      "kind": "outside"
+    },
+    {
+      "id": "w",
+      "label": "Worker",
+      "kind": "cloud",
+      "facts": [
+        "wrangler deploy · KV binding · two secrets"
+      ]
+    },
+    {
+      "id": "ph",
+      "label": "iPhone",
+      "kind": "device"
+    }
+  ],
+  "parts": [
+    {
+      "id": "alerting",
+      "name": "Alerting engine",
+      "kind": "external",
+      "role": "outside",
+      "zone": "gf",
+      "col": 0,
+      "row": 0,
+      "facts": [
+        "contact point: webhook",
+        "URL + shared secret",
+        "groups by alertname, host"
+      ]
+    },
+    {
+      "id": "ingest",
+      "name": "POST /grafana",
+      "kind": "worker",
+      "role": "subject",
+      "zone": "w",
+      "col": 1,
+      "row": 0,
+      "facts": [
+        "verify HMAC of the body",
+        "parse Grafana's payload",
+        "one push per alert, not per group"
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "side": "left",
+          "label": "webhook"
+        },
+        {
+          "id": "dedupe",
+          "side": "bottom",
+          "label": ""
+        }
+      ]
+    },
+    {
+      "id": "router",
+      "name": "Route by label",
+      "kind": "queue",
+      "role": "plain",
+      "zone": "w",
+      "col": 2,
+      "row": 0,
+      "facts": [
+        "site=home, cloud → CJ",
+        "site=meade-manor → Daniel",
+        "unknown site → owner"
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "side": "left",
+          "label": ""
+        },
+        {
+          "id": "out",
+          "side": "right",
+          "label": ""
+        }
+      ]
+    },
+    {
+      "id": "store",
+      "name": "KV",
+      "kind": "store",
+      "role": "layer",
+      "zone": "w",
+      "col": 1,
+      "row": 1,
+      "facts": [
+        "devices/<user>: tokens",
+        "sent/<fingerprint>: state, ttl 7d"
+      ]
+    },
+    {
+      "id": "sender",
+      "name": "APNs client",
+      "kind": "worker",
+      "role": "plain",
+      "zone": "w",
+      "col": 3,
+      "row": 0,
+      "facts": [
+        "ES256 JWT from the .p8",
+        "collapse-id = fingerprint",
+        "410 → drop the token"
+      ],
+      "ports": [
+        {
+          "id": "in",
+          "side": "left",
+          "label": ""
+        },
+        {
+          "id": "out",
+          "side": "bottom",
+          "label": "http/2"
+        }
+      ]
+    },
+    {
+      "id": "register",
+      "name": "POST /devices",
+      "kind": "worker",
+      "role": "plain",
+      "zone": "w",
+      "col": 3,
+      "row": 1,
+      "facts": [
+        "bearer: Keystone JWT",
+        "sub → user, token → device",
+        "DELETE on sign-out"
+      ]
+    },
+    {
+      "id": "phone",
+      "name": "The app",
+      "kind": "device",
+      "role": "plain",
+      "zone": "ph",
+      "col": 3,
+      "row": 2,
+      "facts": [
+        "shows firing and resolved",
+        "opens the alert in Grafana"
+      ]
+    }
+  ],
+  "cables": [
+    {
+      "from": "alerting",
+      "to": "ingest",
+      "toPort": "in",
+      "label": "firing, resolved",
+      "carry": "JSON · HMAC-SHA256",
+      "state": "temporary",
+      "volume": 2
+    },
+    {
+      "from": "ingest",
+      "to": "store",
+      "fromPort": "dedupe",
+      "label": "seen before?",
+      "carry": "KV get, put",
+      "dir": "both",
+      "toSide": "top"
+    },
+    {
+      "from": "ingest",
+      "to": "router",
+      "toPort": "in",
+      "label": "alert + labels",
+      "carry": "in memory"
+    },
+    {
+      "from": "router",
+      "to": "store",
+      "label": "devices for user",
+      "carry": "KV get",
+      "fromSide": "bottom",
+      "toSide": "right",
+      "dir": "both",
+      "labelAt": 0.5
+    },
+    {
+      "from": "router",
+      "to": "sender",
+      "fromPort": "out",
+      "toPort": "in",
+      "label": "one push per device",
+      "carry": "in memory"
+    },
+    {
+      "from": "sender",
+      "to": "phone",
+      "fromPort": "out",
+      "label": "notification",
+      "carry": "APNs · collapse-id",
+      "state": "temporary",
+      "toSide": "top",
+      "labelAt": 0.4
+    },
+    {
+      "from": "phone",
+      "to": "register",
+      "label": "device token",
+      "carry": "HTTPS · JWT",
+      "state": "temporary",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelAt": 0.25,
+      "labelSide": "after"
+    },
+    {
+      "from": "register",
+      "to": "store",
+      "label": "token",
+      "carry": "KV put, delete",
+      "fromSide": "left",
+      "toSide": "right",
+      "labelAt": 0.78
+    }
+  ]
+}

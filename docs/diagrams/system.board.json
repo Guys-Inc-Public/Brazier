@@ -1,0 +1,267 @@
+{
+  "title": "The app, the relay and what they talk to",
+  "grid": {
+    "col": 330,
+    "row": 200
+  },
+  "zones": [
+    {
+      "id": "phone",
+      "label": "iPhone",
+      "kind": "device",
+      "facts": [
+        "iOS 17+ · APNs device token"
+      ]
+    },
+    {
+      "id": "cf",
+      "label": "Cloudflare Workers",
+      "kind": "cloud",
+      "facts": [
+        "yours, or the self-hoster's own account"
+      ]
+    },
+    {
+      "id": "apple",
+      "label": "Apple",
+      "kind": "outside"
+    },
+    {
+      "id": "ovh",
+      "label": "Host · OVH ns566383",
+      "kind": "host"
+    },
+    {
+      "id": "mito",
+      "label": "Host · mitochondria",
+      "kind": "host",
+      "facts": [
+        "grafana.gicloud.org through the tunnel"
+      ]
+    }
+  ],
+  "parts": [
+    {
+      "id": "app",
+      "name": "The app",
+      "kind": "device",
+      "role": "subject",
+      "zone": "phone",
+      "col": 0,
+      "row": 0,
+      "kindLabel": "swiftui",
+      "facts": [
+        "servers · alerts · silences",
+        "dashboards in a web view",
+        "push registration"
+      ],
+      "ports": [
+        {
+          "id": "api",
+          "side": "right",
+          "label": "https"
+        },
+        {
+          "id": "push",
+          "side": "bottom",
+          "label": "apns"
+        }
+      ]
+    },
+    {
+      "id": "relay",
+      "name": "Push relay",
+      "kind": "worker",
+      "role": "plain",
+      "zone": "cf",
+      "col": 1,
+      "row": 0,
+      "kindLabel": "worker",
+      "facts": [
+        "/grafana  webhook in",
+        "/devices  register, unregister",
+        "routes by site label"
+      ],
+      "ports": [
+        {
+          "id": "hook",
+          "side": "right",
+          "label": "webhook"
+        },
+        {
+          "id": "reg",
+          "side": "left",
+          "label": "register"
+        },
+        {
+          "id": "out",
+          "side": "bottom",
+          "label": "push"
+        }
+      ]
+    },
+    {
+      "id": "kv",
+      "name": "Device registry",
+      "kind": "store",
+      "role": "plain",
+      "zone": "cf",
+      "col": 2,
+      "row": 0,
+      "facts": [
+        "KV: user → devices",
+        "KV: fingerprint → sent"
+      ]
+    },
+    {
+      "id": "apns",
+      "name": "APNs",
+      "kind": "external",
+      "role": "outside",
+      "zone": "apple",
+      "col": 1,
+      "row": 1,
+      "facts": [
+        "api.push.apple.com",
+        "HTTP/2 · ES256 key"
+      ]
+    },
+    {
+      "id": "keystone",
+      "name": "Keystone",
+      "kind": "service",
+      "role": "layer",
+      "zone": "ovh",
+      "col": 0,
+      "row": 2,
+      "kindLabel": "idp",
+      "facts": [
+        "public client, PKCE",
+        "issues the JWT Grafana trusts",
+        "JWKS for Grafana"
+      ]
+    },
+    {
+      "id": "grafana",
+      "name": "Grafana",
+      "kind": "dashboard",
+      "role": "plain",
+      "zone": "mito",
+      "col": 2,
+      "row": 2,
+      "kindLabel": "13.2.1",
+      "facts": [
+        "auth.jwt → Keystone JWKS",
+        "alerting API, silences",
+        "contact point: webhook"
+      ],
+      "ports": [
+        {
+          "id": "api",
+          "side": "left",
+          "label": "api"
+        },
+        {
+          "id": "cp",
+          "side": "top",
+          "label": "webhook"
+        },
+        {
+          "id": "q",
+          "side": "bottom",
+          "label": "query"
+        }
+      ]
+    },
+    {
+      "id": "prom",
+      "name": "Prometheus + Loki",
+      "kind": "store",
+      "role": "plain",
+      "zone": "mito",
+      "col": 2,
+      "row": 3,
+      "facts": [
+        "every series behind the alerts"
+      ]
+    }
+  ],
+  "cables": [
+    {
+      "from": "app",
+      "to": "keystone",
+      "label": "sign in",
+      "carry": "OIDC · PKCE",
+      "state": "temporary",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": 0.72
+    },
+    {
+      "from": "app",
+      "to": "grafana",
+      "fromPort": "api",
+      "toPort": "api",
+      "label": "alerts, silences,\nsearch, health",
+      "carry": "HTTPS · X-JWT-Assertion",
+      "volume": 2,
+      "at": 0.22,
+      "labelAt": 0.86
+    },
+    {
+      "from": "app",
+      "to": "relay",
+      "toPort": "reg",
+      "fromSide": "right",
+      "label": "device token",
+      "carry": "HTTPS · JWT",
+      "state": "temporary",
+      "labelAt": 0.55
+    },
+    {
+      "from": "grafana",
+      "to": "relay",
+      "fromPort": "cp",
+      "toPort": "hook",
+      "label": "firing, resolved",
+      "carry": "webhook · HMAC",
+      "volume": 2,
+      "state": "temporary"
+    },
+    {
+      "from": "relay",
+      "to": "kv",
+      "label": "lookup, dedupe",
+      "carry": "KV",
+      "dir": "both"
+    },
+    {
+      "from": "relay",
+      "to": "apns",
+      "fromPort": "out",
+      "label": "notification",
+      "carry": "HTTP/2 · token auth",
+      "state": "temporary",
+      "toSide": "top"
+    },
+    {
+      "from": "apns",
+      "to": "app",
+      "toPort": "push",
+      "label": "push",
+      "carry": "APNs",
+      "state": "temporary",
+      "fromSide": "left",
+      "toSide": "bottom",
+      "labelAt": 0.12
+    },
+    {
+      "from": "grafana",
+      "to": "prom",
+      "fromPort": "q",
+      "label": "PromQL, LogQL",
+      "carry": "HTTP",
+      "toSide": "top"
+    }
+  ]
+}
