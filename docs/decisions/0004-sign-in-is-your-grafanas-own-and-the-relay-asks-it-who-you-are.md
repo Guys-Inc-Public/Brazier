@@ -30,5 +30,16 @@ CJ's first run on a real phone found the in-page sign-in useless for the estate:
 ## Amendment 2, 2026-09-29
 CJ: "Why is the relay required? Why can't it be auto discovered." Grafana OSS has no unauthenticated place an admin can write a note for the app, so the signpost lives beside Grafana instead: the relay's discovery document served on the Grafana's own hostname at `/.well-known/brazier` (a Worker route for the estate, a one-line proxy rule elsewhere), or a DNS TXT record at `_brazier.<host>`. The app reads those from the Grafana address alone; the relay field is the fallback. The document also names the relay's address, so nothing but the Grafana address is typed.
 
+## Amendment 3, 2026-09-29
+CJ: "this needs to work for any OnPrem deployment of grafana with any IdP in front or the default grafana basic Auth." Checked against a throwaway Grafana 11.6 and the estate's 13.2, and closed where it fell short:
+
+- **Basic auth and LDAP** get a native username-and-password card: the app posts to Grafana's own JSON login endpoint (`POST /login`, the same call its page makes) and keeps the session it answers with. A Grafana whose password form is off answers `auth.client.notConfigured`, and the card says so.
+- **An auth proxy in front of Grafana** (Authelia, oauth2-proxy, Cloudflare Access) keeps its own cookie. The app keeps every cookie for the host after a page sign-in, sends them all as one `Cookie` header, and the relay forwards that header untouched to `/api/user`. The address probe treats a sign-in page in front of `/api/health` as reachable, not as a failure.
+- **What a Grafana offers** is read from its public login page (`/login?disableAutoLogin=true`, which shows the page even when auto-login to a provider is on): whether the password form is on, which providers it lists, whether anonymous access is on. The sign-in step orders its cards from that and from the signpost (amendment 2). `/api/frontend/settings` needs a session, so it is not used.
+- **Grafanas older than 11** cannot sign a webhook; the relay also accepts HTTP Basic with the shared secret as the password.
+- **SAML and providers without ID tokens** sign in through the page; no provider card is possible for them, and that is documented rather than worked around.
+
+`docs/reference/compatibility.md` is the matrix and stays current with every build.
+
 ## Consequences
 The credential the app holds reaches the relay once per registration, so a relay must be run by someone the user already trusts with their Grafana session: the Grafana admin, or themselves. That is the self-hosted-first shape of 0002 and rules out a shared relay for strangers until the push grant of milestone 4 exists. Grafana sessions expire after inactivity; the app must notice a 401 and offer to sign in again.

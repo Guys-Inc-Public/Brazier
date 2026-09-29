@@ -18,7 +18,7 @@ check that nothing in it is estate-only. Rows marked *built* exist today; *build
 | Generic OAuth or OIDC provider without passkeys or web-view blocks (Keycloak, Authentik, Okta, Entra, Auth0, GitHub) | Grafana's page in the app; the provider's login runs inside it | nothing | built |
 | A provider that needs a passkey or refuses in-app web views (Google, any WebAuthn second factor) | "Sign in with <provider>" through the system sign-in sheet; Grafana's JWT auth carries the ID token | a public PKCE client for the app in the provider (redirect `brazier://auth/callback`), Grafana `[auth.jwt]` pointed at it, and the signpost below | built |
 | An auth proxy in front of Grafana (Authelia, oauth2-proxy, Cloudflare Access) | Grafana's page in the app; every cookie for the host is kept and sent | nothing | relay built; app build 5 |
-| Anonymous access on | "Continue without signing in" (read-only) | nothing | build 5 |
+| Anonymous access on | "Continue without signing in": browse alerts, no push (the relay needs a signed-in user to own a phone) | nothing | later |
 | Any Grafana | A service-account token | a token | built |
 | SAML (Enterprise), GitHub (no ID tokens) | Grafana's page in the app, or a token; no provider sign-in possible | nothing | built |
 
