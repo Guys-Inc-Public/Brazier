@@ -13,6 +13,7 @@ struct ServerDetailView: View {
     @State private var newToken = ""
     @State private var signedIn = false
     @State private var who: String?
+    @State private var showWeb = false
 
     private var server: Server? { model.store.server(id: serverID) }
 
@@ -50,31 +51,37 @@ struct ServerDetailView: View {
                             ])
                         }
                     }
-                    Labelled("session") {
+                    Labelled("session · \(server.authMethodName)") {
                         if busy {
                             HStack(spacing: Brand.Space.label) { MeterBridge(); Eyebrow("working") }.frame(minHeight: Brand.hitTarget)
-                        } else if server.isOIDC {
-                            Button(signedIn ? "Sign in again" : "Sign in") {
-                                busy = true
-                                Task { latch = await model.signIn(server); await reload(); busy = false }
+                        } else {
+                            switch server.auth {
+                            case .session:
+                                Button(signedIn ? "Sign in again" : "Sign in") { showWeb = true }
+                                    .buttonStyle(ThrowButtonStyle())
+                            case .oidc:
+                                Button(signedIn ? "Sign in again" : "Sign in") {
+                                    busy = true
+                                    Task { latch = await model.signIn(server); await reload(); busy = false }
+                                }
+                                .buttonStyle(ThrowButtonStyle())
+                            case .token:
+                                SecureField("New service-account token", text: $newToken).fieldChrome()
+                                if newToken.isEmpty {
+                                    Interlock(reason: "Paste a token to replace the stored one")
+                                } else {
+                                    Button("Save token") {
+                                        Task { latch = await model.saveToken(newToken, for: server); newToken = ""; await reload() }
+                                    }
+                                    .buttonStyle(ThrowButtonStyle())
+                                }
                             }
-                            .buttonStyle(ThrowButtonStyle())
                             if signedIn {
                                 Button("Sign out") {
                                     busy = true
                                     Task { await model.signOut(server); await reload(); busy = false }
                                 }
                                 .buttonStyle(ThrowButtonStyle(primary: false))
-                            }
-                        } else {
-                            SecureField("New service-account token", text: $newToken).fieldChrome()
-                            if newToken.isEmpty {
-                                Interlock(reason: "Paste a token to replace the stored one")
-                            } else {
-                                Button("Save token") {
-                                    Task { latch = await model.saveToken(newToken, for: server); newToken = ""; await reload() }
-                                }
-                                .buttonStyle(ThrowButtonStyle())
                             }
                         }
                     }
@@ -94,6 +101,17 @@ struct ServerDetailView: View {
             .navigationTitle(server.name)
             .navigationBarTitleDisplayMode(.inline)
             .task { await reload() }
+            .fullScreenCover(isPresented: $showWeb) {
+                GrafanaLoginSheet(server: server.url) { cookie, expiry, user in
+                    showWeb = false
+                    busy = true
+                    Task {
+                        latch = await model.completeSessionSignIn(server, cookie: cookie, expiry: expiry, user: user)
+                        await reload()
+                        busy = false
+                    }
+                }
+            }
         } else {
             BlankBay(title: "Removed", text: "This server is no longer in the list.")
         }
@@ -102,16 +120,18 @@ struct ServerDetailView: View {
     private func reload() async {
         guard let server else { return }
         signedIn = await model.credentials.isSignedIn(server)
-        who = await model.credentials.subjectName(server)
+        who = await model.credentials.subjectName(server) ?? (server.id == model.selectedServerID ? model.accountName : nil)
     }
 
     private func cutList(for server: Server) -> [String] {
         var lines = ["\(server.name) leaves the list; its alerts stop showing here."]
-        if server.isOIDC {
-            lines.append("The stored session for \(server.host) is erased; a fresh sign-in would be needed.")
-            if model.push.deviceToken != nil { lines.append("This phone is deregistered from the relay; pushes routed to it stop.") }
-        } else {
-            lines.append("The stored service-account token is erased from the keychain. The token itself stays valid in Grafana.")
+        switch server.auth {
+        case .session: lines.append("The stored Grafana session for \(server.host) is erased from the keychain.")
+        case .oidc: lines.append("The stored sign-in for \(server.host) is erased; a fresh sign-in would be needed.")
+        case .token: lines.append("The stored service-account token is erased from the keychain. The token itself stays valid in Grafana.")
+        }
+        if model.push.deviceToken != nil, model.store.relayURL != nil {
+            lines.append("This phone is deregistered from the relay under this server's login; pushes routed to it stop.")
         }
         return lines
     }

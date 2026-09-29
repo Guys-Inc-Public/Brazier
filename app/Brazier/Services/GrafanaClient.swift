@@ -15,13 +15,18 @@ enum GrafanaError: LocalizedError {
 }
 
 /// A thin client over Grafana's HTTP API. No caching, no local store: every screen reads the server.
+/// Cookies are never stored by the session: the credential rides as one header, set on purpose,
+/// and a rotated session cookie goes straight to the keychain.
 struct GrafanaClient {
     let server: Server
     let credentials: CredentialProvider
 
     private static let session: URLSession = {
-        let config = URLSessionConfiguration.default
+        let config = URLSessionConfiguration.ephemeral
         config.timeoutIntervalForRequest = 20
+        config.httpCookieStorage = nil
+        config.httpShouldSetCookies = false
+        config.httpCookieAcceptPolicy = .never
         config.httpAdditionalHeaders = ["Accept": "application/json"]
         return URLSession(configuration: config)
     }()
@@ -89,16 +94,38 @@ struct GrafanaClient {
         let data: Data
         let response: URLResponse
         do { (data, response) = try await Self.session.data(for: request) }
+        catch let error as URLError { throw GrafanaError.transport(ServerProbe.explain(error)) }
         catch { throw GrafanaError.transport(error.localizedDescription) }
-        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
-        if status == 401, authenticated, !retried, server.isOIDC {
-            return try await send(method, path, query: query, body: body, authenticated: authenticated, retried: true)
+        let http = response as? HTTPURLResponse
+        let status = http?.statusCode ?? 0
+        if let http, server.isSession { await keepRotatedSession(from: http, url: request.url!) }
+        if status == 401, authenticated {
+            if server.isSession {
+                await credentials.endSession(server)
+                throw AuthError.sessionEnded
+            }
+            if !retried, server.isOIDC {
+                return try await send(method, path, query: query, body: body, authenticated: authenticated, retried: true)
+            }
         }
         guard (200..<300).contains(status) else {
             let snippet = String(data: data.prefix(160), encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
             throw GrafanaError.http(status, snippet)
         }
         return data
+    }
+
+    /// Grafana answers with Set-Cookie when it rotates the session; the new value is kept at once.
+    private func keepRotatedSession(from http: HTTPURLResponse, url: URL) async {
+        var fields: [String: String] = [:]
+        for (key, value) in http.allHeaderFields {
+            if let key = key as? String, let value = value as? String { fields[key] = value }
+        }
+        guard fields.keys.contains(where: { $0.lowercased() == "set-cookie" }) else { return }
+        let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
+        guard let session = cookies.first(where: { $0.name == "grafana_session" }), !session.value.isEmpty else { return }
+        let expiry = cookies.first { $0.name == "grafana_session_expiry" }?.value
+        await credentials.rotateSession(cookie: session.value, expiry: expiry, for: server)
     }
 
     private func decode<T: Decodable>(_ data: Data) throws -> T {

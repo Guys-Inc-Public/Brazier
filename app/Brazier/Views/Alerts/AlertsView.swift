@@ -38,7 +38,7 @@ struct AlertsView: View {
     private var content: some View {
         switch model.bay {
         case .blank:
-            BlankBay(title: "No server", text: "Add the Grafana you watch under Settings › Servers.")
+            BlankBay(title: "No server", text: "Add a Grafana under Settings › Servers.")
         case .warming:
             WarmingBay(name: model.selectedServer?.name ?? "")
         case .faulted(let reason):

@@ -1,8 +1,10 @@
 import SwiftUI
 
 /// The rack: one unit per server. Name over host, lamp for mounted state, the auth word.
+/// Adding one runs the same walkthrough as the first run, minus the welcome.
 struct ServersView: View {
     @Environment(AppModel.self) private var model
+    @State private var adding = false
 
     var body: some View {
         List {
@@ -20,8 +22,8 @@ struct ServersView: View {
                     .listRowBackground(Brand.Tone.ink)
                     .listRowSeparatorTint(Brand.Tone.line)
                 }
-                NavigationLink {
-                    AddServerView()
+                Button {
+                    adding = true
                 } label: {
                     HStack(spacing: Brand.Space.label) {
                         Image(systemName: "plus").foregroundStyle(Brand.Tone.hot)
@@ -41,5 +43,9 @@ struct ServersView: View {
         .navigationTitle("Servers")
         .navigationBarTitleDisplayMode(.inline)
         .navigationDestination(for: Server.self) { ServerDetailView(serverID: $0.id) }
+        .fullScreenCover(isPresented: $adding) {
+            OnboardingFlow(includeWelcome: false) { adding = false }
+                .environment(model)
+        }
     }
 }

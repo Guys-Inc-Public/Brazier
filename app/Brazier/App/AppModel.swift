@@ -38,6 +38,7 @@ final class AppModel {
     private(set) var accountName: String?
     var pendingAlert: GrafanaAlert?
     private var refreshing = false
+    private var accountNames: [UUID: String] = [:]
 
     init() {
         if let raw = UserDefaults.standard.string(forKey: "selectedServer"),
@@ -99,7 +100,7 @@ final class AppModel {
         refreshing = true
         defer { refreshing = false }
         signedIn = await credentials.isSignedIn(server)
-        accountName = await credentials.subjectName(server)
+        accountName = await credentials.subjectName(server) ?? accountNames[server.id]
         guard signedIn else {
             bay = .faulted("Not signed in")
             return
@@ -108,6 +109,7 @@ final class AppModel {
             let client = client(for: server)
             if accountName == nil, let user = try? await client.user() {
                 accountName = user.login
+                accountNames[server.id] = user.login
             }
             async let alertsRead = client.alerts()
             async let silencesRead = client.silences()
@@ -115,6 +117,10 @@ final class AppModel {
             silences = (try? await silencesRead) ?? []
             asOf = Date()
             bay = .mounted
+        } catch let error as AuthError {
+            signedIn = false
+            alerts = []
+            bay = .faulted(error.localizedDescription)
         } catch {
             lastFailure = Date()
             record("GET /api/prometheus/grafana/api/v1/alerts", error)
@@ -124,18 +130,24 @@ final class AppModel {
 
     // MARK: Servers
 
-    func add(_ server: Server, apiToken: String?) async {
+    /// Adds a server with whatever secret the walkthrough verified for it.
+    func add(_ server: Server, apiToken: String? = nil, session: (cookie: String, expiry: String?)? = nil, tokens: TokenResponse? = nil, login: String? = nil) async {
         store.add(server)
-        if let apiToken, !apiToken.isEmpty {
-            do { try await credentials.storeAPIToken(apiToken, for: server) }
-            catch { record("keychain \(server.host)", error) }
+        do {
+            if let apiToken, !apiToken.isEmpty { try await credentials.storeAPIToken(apiToken, for: server) }
+            if let session { try await credentials.storeSession(cookie: session.cookie, expiry: session.expiry, for: server) }
+            if let tokens { try await credentials.store(tokens, for: server) }
+        } catch {
+            record("keychain \(server.host)", error)
         }
+        if let login { accountNames[server.id] = login }
         if selectedServerID == nil { select(server) }
     }
 
     func remove(_ server: Server) async {
         await deregisterPush(using: server)
         store.remove(server)
+        accountNames[server.id] = nil
         if selectedServerID == server.id {
             selectedServerID = store.servers.first?.id
             if let next = selectedServer { select(next) } else { alerts = []; bay = .blank }
@@ -171,9 +183,10 @@ final class AppModel {
 
     // MARK: Sign-in
 
+    /// Single sign-on through the provider. Session servers sign in through the web view instead.
     func signIn(_ server: Server) async -> ThrowResult {
         guard case .oidc(let issuer, let clientID) = server.auth else {
-            return .refuse("This server uses a token, not a sign-in")
+            return .refuse("This server does not sign in through a provider")
         }
         do {
             let tokens = try await OIDC.signIn(issuer: issuer, clientID: clientID)
@@ -190,9 +203,24 @@ final class AppModel {
         }
     }
 
+    /// The web view finished Grafana's own sign-in: keep the session and read again.
+    func completeSessionSignIn(_ server: Server, cookie: String, expiry: String?, user: GrafanaUser) async -> ThrowResult {
+        do {
+            try await credentials.storeSession(cookie: cookie, expiry: expiry, for: server)
+            accountNames[server.id] = user.login
+            if selectedServerID == server.id || selectedServerID == nil { select(server) }
+            await registerPush()
+            return .pass("Signed in as \(user.login)")
+        } catch {
+            record("keychain \(server.host)", error)
+            return .refuse(error.localizedDescription)
+        }
+    }
+
     func signOut(_ server: Server) async {
         await deregisterPush(using: server)
         await credentials.forget(server)
+        accountNames[server.id] = nil
         if selectedServerID == server.id {
             alerts = []
             silences = []
@@ -231,33 +259,41 @@ final class AppModel {
 
     // MARK: Push
 
+    /// The server the relay files this phone under: the mounted one when it is signed in, else any signed-in one.
+    private func serverForPush() async -> Server? {
+        if let server = selectedServer, await credentials.isSignedIn(server) { return server }
+        for server in store.servers where await credentials.isSignedIn(server) { return server }
+        return nil
+    }
+
     func registerPush() async {
-        guard let token = push.deviceToken else { return }
-        guard let server = store.servers.first(where: { $0.isOIDC }) else {
-            push.registration = .refuse("No OIDC server; the relay needs a signed-in identity")
+        guard let token = push.deviceToken, let relay = store.relayURL else { return }
+        guard let server = await serverForPush() else {
+            push.registration = .refuse("Sign in to a server first; the relay files this phone under your Grafana login")
             return
         }
         push.registration = .pending
         do {
-            guard case .jwt(let idToken) = try await credentials.credential(for: server) else { throw AuthError.signedOut }
-            try await RelayClient(baseURL: store.relayURL)
-                .register(token: token, environment: PushManager.apnsEnvironment, name: UIDevice.current.name, idToken: idToken)
+            let credential = try await credentials.credential(for: server)
+            let result = try await RelayClient(baseURL: relay)
+                .register(token: token, environment: PushManager.apnsEnvironment, name: UIDevice.current.name, server: server, credential: credential)
+            push.registeredAs = result.user
             push.registration = .pass(Date())
         } catch {
             push.registration = .refuse(error.localizedDescription)
-            record("POST \(store.relayURL.host ?? "relay")/devices", error)
+            record("POST \(relay.host ?? "relay")/devices", error)
         }
     }
 
     private func deregisterPush(using server: Server) async {
-        guard server.isOIDC, let token = push.deviceToken,
-              let credential = try? await credentials.credential(for: server),
-              case .jwt(let idToken) = credential else { return }
+        guard let token = push.deviceToken, let relay = store.relayURL,
+              let credential = try? await credentials.credential(for: server) else { return }
         do {
-            try await RelayClient(baseURL: store.relayURL).deregister(token: token, idToken: idToken)
+            try await RelayClient(baseURL: relay).deregister(token: token, server: server, credential: credential)
             push.registration = .none
+            push.registeredAs = nil
         } catch {
-            record("DELETE \(store.relayURL.host ?? "relay")/devices", error)
+            record("DELETE \(relay.host ?? "relay")/devices", error)
         }
     }
 

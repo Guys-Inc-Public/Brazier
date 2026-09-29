@@ -13,7 +13,7 @@ struct DashboardsView: View {
         NavigationStack {
             Group {
                 if model.selectedServer == nil {
-                    BlankBay(title: "No server", text: "Add the Grafana you watch under Settings › Servers.")
+                    BlankBay(title: "No server", text: "Add a Grafana under Settings › Servers.")
                 } else if !model.signedIn {
                     BlankBay(title: "Not signed in", text: "Sign in on the Alerts tab or under Settings › Servers.")
                 } else if let fault, hits.isEmpty {

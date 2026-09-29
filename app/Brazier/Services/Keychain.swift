@@ -62,4 +62,10 @@ enum SecretKey {
     static func refreshToken(_ id: UUID) -> String { "server.\(id.uuidString).refresh" }
     static func idToken(_ id: UUID) -> String { "server.\(id.uuidString).id" }
     static func apiToken(_ id: UUID) -> String { "server.\(id.uuidString).token" }
+    static func sessionCookie(_ id: UUID) -> String { "server.\(id.uuidString).session" }
+    static func sessionExpiry(_ id: UUID) -> String { "server.\(id.uuidString).session-expiry" }
+
+    static func all(_ id: UUID) -> [String] {
+        [refreshToken(id), idToken(id), apiToken(id), sessionCookie(id), sessionExpiry(id)]
+    }
 }

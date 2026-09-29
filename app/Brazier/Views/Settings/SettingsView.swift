@@ -4,6 +4,9 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var relayText = ""
     @State private var registering = false
+    @State private var testing = false
+    @State private var relayHealth: RelayHealth?
+    @State private var relayFault: String?
 
     private var version: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
@@ -11,8 +14,12 @@ struct SettingsView: View {
         return "\(short) (\(build))"
     }
 
+    private var relayURL: URL? {
+        if case .url(let url) = ServerAddress.normalise(relayText) { return url }
+        return nil
+    }
+
     var body: some View {
-        @Bindable var store = model.store
         NavigationStack {
             List {
                 Section {
@@ -29,6 +36,7 @@ struct SettingsView: View {
                 } header: { Eyebrow("servers").textCase(nil) }
 
                 Section {
+                    relayField
                     row("Permission") { StateChip(word: model.push.authorizationWord, signal: model.push.authorizationSignal) }
                     if model.push.authorization == .notDetermined {
                         Button("Allow notifications") { Task { _ = await model.push.requestPermission() } }
@@ -43,14 +51,6 @@ struct SettingsView: View {
                         }
                     }
                     row("Environment") { Text(PushManager.apnsEnvironment).font(BrandFont.code).foregroundStyle(Brand.Tone.paper) }
-                    VStack(alignment: .leading, spacing: Brand.Space.inline) {
-                        Eyebrow("relay url")
-                        TextField("https://brazier.gicloud.org", text: $relayText)
-                            .fieldChrome().keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                            .onSubmit { if let url = URL(string: relayText) { store.relayURL = url } }
-                    }
-                    .padding(.vertical, Brand.Space.inline)
-                    .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
                     row("Registration") {
                         switch model.push.registration {
                         case .none: StateChip(word: "NOT SENT", signal: .none)
@@ -59,22 +59,28 @@ struct SettingsView: View {
                         case .refuse: StateChip(word: "REFUSE", signal: .stop)
                         }
                     }
+                    if let who = model.push.registeredAs {
+                        row("Filed under") { Text(who).font(BrandFont.code).foregroundStyle(Brand.Tone.paper) }
+                    }
                     if case .refuse(let why) = model.push.registration {
                         Text(why).font(BrandFont.small).foregroundStyle(Brand.Tone.paper)
                             .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
                     }
-                    if model.push.deviceToken != nil {
+                    if model.push.deviceToken == nil {
+                        Interlock(reason: "No device token yet; allow notifications first")
+                            .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
+                    } else if relayURL == nil {
+                        Interlock(reason: "Enter a relay address to register this phone")
+                            .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
+                    } else {
                         Button(registering ? "Registering…" : "Register this phone with the relay") {
                             guard !registering else { return }
                             registering = true
-                            if let url = URL(string: relayText) { store.relayURL = url }
+                            model.store.relayURL = relayURL
                             Task { await model.registerPush(); registering = false }
                         }
                         .buttonStyle(ThrowButtonStyle(primary: false))
                         .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-                    } else {
-                        Interlock(reason: "No device token yet; allow notifications first")
-                            .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
                     }
                 } header: { Eyebrow("push").textCase(nil) }
 
@@ -108,9 +114,53 @@ struct SettingsView: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .principal) { HeaderMark() } }
             .task {
-                relayText = model.store.relayURL.absoluteString
+                relayText = model.store.relayURL?.absoluteString ?? ""
                 await model.push.refreshAuthorization()
             }
+        }
+    }
+
+    /// The relay address, a test against its /health, and the one line of what a relay is.
+    private var relayField: some View {
+        VStack(alignment: .leading, spacing: Brand.Space.inline) {
+            Eyebrow("relay address")
+            HStack(spacing: Brand.Space.inline) {
+                TextField("https://relay.example.com", text: $relayText)
+                    .fieldChrome().keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                    .onSubmit(saveRelay)
+                if testing {
+                    MeterBridge().frame(width: 60)
+                } else {
+                    Button("Test", action: testRelay).buttonStyle(MomentaryButtonStyle())
+                        .disabled(relayURL == nil).opacity(relayURL == nil ? 0.4 : 1)
+                }
+            }
+            if let relayHealth {
+                ReadingLine(signal: relayHealth.ok ? .ok : .wait, text: "Relay \(relayHealth.version ?? "") · \(relayHealth.ok ? "ok" : "not ok")\(relayHealth.apns == false ? " · push key not set yet" : "")")
+            } else if let relayFault {
+                ReadingLine(signal: .stop, text: relayFault)
+            }
+            Text("A small relay run by whoever runs your Grafana; it receives Grafana's webhook and hands each alert to Apple. Leave it empty and alerts still read whenever the app is open.")
+                .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
+        }
+        .padding(.vertical, Brand.Space.inline)
+        .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
+    }
+
+    private func saveRelay() {
+        model.store.relayURL = relayURL
+        relayHealth = nil
+        relayFault = nil
+    }
+
+    private func testRelay() {
+        guard let url = relayURL else { return }
+        saveRelay()
+        testing = true
+        Task {
+            do { relayHealth = try await RelayClient(baseURL: url).health(); relayFault = nil }
+            catch { relayHealth = nil; relayFault = error.localizedDescription }
+            testing = false
         }
     }
 

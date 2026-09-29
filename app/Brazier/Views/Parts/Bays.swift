@@ -38,24 +38,40 @@ struct FaultedBay: View {
     let reason: String
     @State private var latch: ThrowResult?
     @State private var signingIn = false
+    @State private var showWeb = false
 
-    private var notSignedIn: Bool { reason == "Not signed in" }
+    private var notSignedIn: Bool { reason == "Not signed in" || reason == "Signed out" }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Brand.Space.card) {
             VStack(alignment: .leading, spacing: Brand.Space.label) {
                 Eyebrow("faulted", tone: Brand.Tone.stop)
                 Text(model.selectedServer?.name ?? "Server").font(BrandFont.title).foregroundStyle(Brand.Tone.paper)
-                Text(reason).font(BrandFont.body).foregroundStyle(Brand.Tone.paper)
+                Text(reason == "Signed out" ? "Grafana ended the session. Sign in again to keep reading." : reason)
+                    .font(BrandFont.body).foregroundStyle(Brand.Tone.paper)
             }
             if let latch {
                 LatchView(result: latch) { self.latch = nil }
             }
             if notSignedIn, let server = model.selectedServer {
-                if server.isOIDC {
-                    if signingIn {
-                        HStack(spacing: Brand.Space.label) { MeterBridge(); Eyebrow("signing in") }
-                    } else {
+                if signingIn {
+                    HStack(spacing: Brand.Space.label) { MeterBridge(); Eyebrow("signing in") }
+                } else {
+                    switch server.auth {
+                    case .session:
+                        Button("Sign in again") { showWeb = true }
+                            .buttonStyle(ThrowButtonStyle())
+                            .fullScreenCover(isPresented: $showWeb) {
+                                GrafanaLoginSheet(server: server.url) { cookie, expiry, user in
+                                    showWeb = false
+                                    signingIn = true
+                                    Task {
+                                        latch = await model.completeSessionSignIn(server, cookie: cookie, expiry: expiry, user: user)
+                                        signingIn = false
+                                    }
+                                }
+                            }
+                    case .oidc:
                         Button("Sign in to \(server.name)") {
                             signingIn = true
                             Task {
@@ -64,10 +80,10 @@ struct FaultedBay: View {
                             }
                         }
                         .buttonStyle(ThrowButtonStyle())
+                    case .token:
+                        Text("Paste a new service-account token under Settings › Servers › \(server.name).")
+                            .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
                     }
-                } else {
-                    Text("Add the service-account token for this server in Settings.")
-                        .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
                 }
             } else {
                 Button("Read again") { Task { await model.refresh() } }

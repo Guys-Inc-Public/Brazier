@@ -26,7 +26,8 @@ final class PushManager {
     var deviceToken: String?
     var authorization: UNAuthorizationStatus = .notDetermined
     var registration: Registration = .none
-    var registrationFailure: String?
+    /// The Grafana login the relay filed this phone under, once it answered.
+    var registeredAs: String?
 
     static func configureCategories() {
         let actions = Self.actions.map {
