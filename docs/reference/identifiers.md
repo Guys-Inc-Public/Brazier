@@ -28,6 +28,9 @@ Decided 2026-09-28. Change here first, then everywhere the row names.
 | Our relay's grant key | registered 2026-09-29 as the first relay, key at `/root/.config/brazier/relay-grant-key` (mode 600) on mitochondria; unused by our relay, which signs with its own key | proof of the flow; `POST /grant` test |
 | Grafana JWT auth | header `X-JWT-Assertion`, JWKS = the Keystone app above, expect_claims iss + aud, lookup by email, auto sign-up off | `/opt/monitoring/docker-compose.yml`, grafana service, since 2026-09-28 |
 | Grafana contact point | `brazier`, webhook `https://brazier.gicloud.org/grafana`, HMAC secret `BRAZIER_WEBHOOK_SECRET` from `/opt/monitoring/.env` | `grafana/provisioning/alerting/contact-points.yml` |
+| Demo Grafana | `https://demo.brazier.gicloud.org`, Grafana 13.2.3 on the OVH box under `/opt/brazier-demo` (Docker Compose, `127.0.0.1:3010`, nginx gate on `0.0.0.0:8880` that needs the `X-Demo-Key` header), provisioned from `demo/stack/` | Apple's reviewer and anyone trying the app; created 2026-09-29 |
+| Demo Worker | `brazier-demo`, custom domain `demo.brazier.gicloud.org`, var `ORIGIN`, secret `DEMO_KEY`; answers `/.well-known/brazier` from the relay | `demo/wrangler.jsonc`; deployed 2026-09-29 |
+| Demo credentials | login `reviewer` (org Editor); the password, the admin password and the gate key are in `/root/.config/brazier/demo-credentials` on mitochondria (mode 600) | App Store Connect review notes; never in the repository |
 | Layout | `relay/` Worker (TypeScript) · `app/` Xcode project `Brazier.xcodeproj` · `docs/` · `assets/brand/` · `design/` | |
 | Icon, favicon | `assets/brand/icon/brazier-icon-tonal-on-ink-1024.png`, `brazier-icon-tonal.ico` | Xcode asset catalog, docs site |
 | Build guide | https://claude.ai/artifact/1sGCorNw9aoR5jXTEvzhjz | the page this repository mirrors |

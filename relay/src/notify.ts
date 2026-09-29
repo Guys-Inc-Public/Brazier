@@ -73,19 +73,38 @@ export function orgOf(alert: GrafanaAlert, wh: GrafanaWebhook): number {
   return 0;
 }
 
-/** `ORGS`: org id → display name, for the lock screen. Bad JSON is logged and ignored, never fails a webhook. */
-export function parseOrgs(raw: string | undefined): Record<string, string> {
-  if (!raw) return {};
+/** `ORGS`: org id → display name, for the lock screen. Flat (`{"1":"Infrastructure"}`) when the relay serves one
+ *  Grafana; keyed by Grafana origin when it serves several (`{"https://a.example":{"1":"Ops"},"https://b.example":{…}}`).
+ *  Bad JSON is logged and ignored, never fails a webhook. */
+export type OrgNames = { flat: Record<string, string>; byOrigin: Record<string, Record<string, string>> };
+
+export function parseOrgs(raw: string | undefined): OrgNames {
+  const out: OrgNames = { flat: {}, byOrigin: {} };
+  if (!raw) return out;
   try {
     const obj = JSON.parse(raw) as unknown;
     if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("not an object");
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) if (typeof v === "string" && v) out[k] = v;
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) {
+      if (typeof v === "string" && v) out.flat[k] = v;
+      else if (v && typeof v === "object" && !Array.isArray(v)) {
+        const names: Record<string, string> = {};
+        for (const [id, name] of Object.entries(v as Record<string, unknown>)) if (typeof name === "string" && name) names[id] = name;
+        out.byOrigin[k.replace(/\/+$/, "").toLowerCase()] = names;
+      }
+    }
     return out;
   } catch (e) {
     console.log(`ORGS ignored: ${(e as Error).message}`);
-    return {};
+    return out;
   }
+}
+
+/** The display name of an org on the Grafana that sent the webhook (its externalURL), if ORGS names it. */
+export function orgName(orgs: OrgNames, externalURL: string | undefined, orgId: number): string | undefined {
+  let origin: string | undefined;
+  try { if (externalURL) origin = new URL(externalURL).origin.toLowerCase(); } catch { origin = undefined; }
+  const scoped = origin ? orgs.byOrigin[origin] : undefined;
+  return (scoped ?? orgs.flat)[String(orgId)];
 }
 
 /** The lock-screen text and the data the app needs to open and silence the alert. */
@@ -195,7 +214,7 @@ export async function deliver(env: Env, wh: GrafanaWebhook, now = new Date()): P
       continue;
     }
     if (!cfg) continue; // accepted, nothing to send with yet
-    const payload = buildPayload(alert, wh.externalURL, orgId, orgs[String(orgId)]);
+    const payload = buildPayload(alert, wh.externalURL, orgId, orgName(orgs, wh.externalURL, orgId));
     const severity = alert.labels.severity;
     let accepted = 0;
     for (const name of users) {

@@ -1,0 +1,22 @@
+# Only the brazier-demo Worker knows the key; everyone else gets 403 and never reaches Grafana.
+server {
+    listen 80;
+    server_name _;
+
+    if ($http_x_demo_key != "${DEMO_KEY}") {
+        return 403;
+    }
+
+    location / {
+        proxy_pass http://grafana:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Host demo.brazier.gicloud.org;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host demo.brazier.gicloud.org;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 120s;
+    }
+}

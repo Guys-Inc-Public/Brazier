@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "brazier-demo",
+  "account_id": "b91113eccd05a2abae65f95733a9403e",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "observability": { "enabled": true },
+  "vars": {
+    // The gate in front of the demo Grafana on the OVH box (plain HTTP on a public port; the gate
+    // refuses anything without the DEMO_KEY header this Worker adds). By hostname, not IP: a Worker's
+    // fetch to an IP literal fails with Cloudflare error 1003, and only Cloudflare's proxied ports work.
+    "ORIGIN": "http://ns566383.ip-51-79-19.net:8880",
+    // Where the discovery document comes from, so the app finds the relay from the demo address alone.
+    "RELAY_URL": "https://brazier.gicloud.org"
+  },
+  // Secret, set with `wrangler secret put`: DEMO_KEY
+  "routes": [{ "pattern": "demo.brazier.gicloud.org", "custom_domain": true }]
+}

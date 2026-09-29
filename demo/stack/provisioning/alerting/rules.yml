@@ -1,0 +1,160 @@
+apiVersion: 1
+# Three demo rules on synthetic data: two always firing, one that flaps about once a minute.
+groups:
+- orgId: 1
+  name: demo
+  folder: Demo
+  interval: 10s
+  rules:
+  - uid: demo-disk-filling
+    title: Disk above 85 percent
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warn
+      host: demo-host
+      site: demo
+    annotations:
+      summary: demo-host has 91 percent of its disk in use
+    data:
+    - refId: A
+      datasourceUid: demo-testdata
+      relativeTimeRange:
+        from: 600
+        to: 0
+      model:
+        refId: A
+        datasource:
+          type: grafana-testdata-datasource
+          uid: demo-testdata
+        scenarioId: csv_metric_values
+        stringInput: 1,1,1,1
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        datasource:
+          type: __expr__
+          uid: __expr__
+        type: reduce
+        expression: A
+        reducer: last
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        datasource:
+          type: __expr__
+          uid: __expr__
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: demo-container-restarts
+    title: Container restarting
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: warn
+      host: demo-host
+      site: demo
+    annotations:
+      summary: The container demo-app restarted 3 times in 10 minutes
+    data:
+    - refId: A
+      datasourceUid: demo-testdata
+      relativeTimeRange:
+        from: 600
+        to: 0
+      model:
+        refId: A
+        datasource:
+          type: grafana-testdata-datasource
+          uid: demo-testdata
+        scenarioId: predictable_pulse
+        pulseWave:
+          timeStep: 10
+          onCount: 6
+          offCount: 6
+          onValue: 1
+          offValue: 0
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        datasource:
+          type: __expr__
+          uid: __expr__
+        type: reduce
+        expression: A
+        reducer: last
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        datasource:
+          type: __expr__
+          uid: __expr__
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0
+  - uid: demo-cert-expiring
+    title: Certificate expiring
+    condition: C
+    for: 0s
+    noDataState: OK
+    execErrState: Error
+    labels:
+      severity: page
+      host: demo-edge
+      site: demo
+    annotations:
+      summary: demo.example.org's certificate expires in 6 days
+    data:
+    - refId: A
+      datasourceUid: demo-testdata
+      relativeTimeRange:
+        from: 600
+        to: 0
+      model:
+        refId: A
+        datasource:
+          type: grafana-testdata-datasource
+          uid: demo-testdata
+        scenarioId: csv_metric_values
+        stringInput: 1,1,1,1
+    - refId: B
+      datasourceUid: __expr__
+      model:
+        refId: B
+        datasource:
+          type: __expr__
+          uid: __expr__
+        type: reduce
+        expression: A
+        reducer: last
+    - refId: C
+      datasourceUid: __expr__
+      model:
+        refId: C
+        datasource:
+          type: __expr__
+          uid: __expr__
+        type: threshold
+        expression: B
+        conditions:
+        - evaluator:
+            type: gt
+            params:
+            - 0

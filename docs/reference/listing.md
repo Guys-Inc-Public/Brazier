@@ -49,7 +49,7 @@ Brazier is not affiliated with or endorsed by Grafana Labs. Grafana is a tradema
 
 ## Keywords
 
-grafana,alerts,alerting,monitoring,prometheus,loki,dashboards,on-call,silence,self-hosted,push,devops
+grafana,alerts,alerting,monitoring,prometheus,loki,dashboards,on-call,silence,self-hosted,push
 
 ## What's new
 

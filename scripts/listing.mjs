@@ -39,32 +39,39 @@ await must("PATCH", `/v1/appInfos/${info.id}`, { data: { type: "appInfos", id: i
   primaryCategory: { data: { type: "appCategories", id: primary } }, secondaryCategory: { data: { type: "appCategories", id: secondary } } } } });
 console.log(`categories: ${primary}, ${secondary}`);
 
-// 3. Age rating: nothing applies.
-const none = {};
-for (const k of ["alcoholTobaccoOrDrugUseOrReferences", "contests", "gamblingSimulated", "horrorOrFearThemes", "matureOrSuggestiveThemes", "medicalOrTreatmentInformation",
-  "profanityOrCrudeHumor", "sexualContentGraphicAndNudity", "sexualContentOrNudity", "violenceCartoonOrFantasy", "violenceRealistic", "violenceRealisticProlongedGraphicOrSadistic"]) none[k] = "NONE";
-const bools = { gambling: false, unrestrictedWebAccess: false, lootBox: false, advertising: false, messagingAndChat: false, userGeneratedContent: false, parentalControls: false, healthOrWellnessTopics: false };
+// 3. Age rating: nothing applies. The attribute set changes over time, so read it and answer every key
+// with its "none": enums get NONE, booleans false; overrides NONE; Korea/GRAC and the info URL are left alone.
 {
-  const { status, body } = await call("PATCH", `/v1/ageRatingDeclarations/${info.id}`, { data: { type: "ageRatingDeclarations", id: info.id, attributes: { ...none, ...bools, ageRatingOverrideV2: "NONE" } } });
-  if (status >= 300) {
-    // Older field sets: drop whatever this API version does not know and try once more.
-    const unknown = (body.errors ?? []).map((e) => /'([A-Za-z0-9]+)'/.exec(e.detail ?? "")?.[1]).filter(Boolean);
-    const attrs = { ...none, ...bools, ageRatingOverrideV2: "NONE" };
-    for (const k of unknown) delete attrs[k];
-    await must("PATCH", `/v1/ageRatingDeclarations/${info.id}`, { data: { type: "ageRatingDeclarations", id: info.id, attributes: attrs } });
-    console.log(`age rating: none (without ${unknown.join(", ")})`);
-  } else console.log("age rating: none");
+  const decl = await must("GET", `/v1/appInfos/${info.id}/ageRatingDeclaration`);
+  const attrs = {};
+  const booleans = new Set(["gambling", "unrestrictedWebAccess", "lootBox", "advertising", "messagingAndChat", "userGeneratedContent", "parentalControls",
+    "healthOrWellnessTopics", "ageAssurance", "socialMedia", "socialMediaAgeRestricted", "seventeenPlus"]);
+  const skip = new Set(["kidsAgeBand", "koreaAgeRatingOverride", "gracRatingClassificationNumber", "developerAgeRatingInfoUrl", "ageRatingOverride"]);
+  for (const k of Object.keys(decl.data.attributes)) {
+    if (skip.has(k)) continue;
+    attrs[k] = booleans.has(k) ? false : "NONE";
+  }
+  await must("PATCH", `/v1/ageRatingDeclarations/${decl.data.id}`, { data: { type: "ageRatingDeclarations", id: decl.data.id, attributes: attrs } });
+  console.log(`age rating: none (${Object.keys(attrs).length} answers)`);
 }
 
 // 4. Version text.
 const locs = await must("GET", `/v1/appStoreVersions/${version.id}/appStoreVersionLocalizations`);
 const loc = locs.data.find((l) => l.attributes.locale === "en-US");
-await must("PATCH", `/v1/appStoreVersionLocalizations/${loc.id}`, { data: { type: "appStoreVersionLocalizations", id: loc.id, attributes: {
-  description: limit("description", section("Description"), 4000),
-  keywords: limit("keywords", section("Keywords"), 100),
-  promotionalText: limit("promotional text", section("Promotional text"), 170),
-  whatsNew: section("What's new"), supportUrl: section("Support URL"), marketingUrl: section("Marketing URL") } } });
-console.log("version text: description, keywords, promotional, what's new, URLs");
+{
+  const attributes = {
+    description: limit("description", section("Description"), 4000),
+    keywords: limit("keywords", section("Keywords"), 100),
+    promotionalText: limit("promotional text", section("Promotional text"), 170),
+    supportUrl: section("Support URL"), marketingUrl: section("Marketing URL"),
+  };
+  // "What's new" exists only from the second version on; Apple refuses it on a first release.
+  const withNews = await call("PATCH", `/v1/appStoreVersionLocalizations/${loc.id}`, { data: { type: "appStoreVersionLocalizations", id: loc.id, attributes: { ...attributes, whatsNew: section("What's new") } } });
+  if (withNews.status >= 300) {
+    await must("PATCH", `/v1/appStoreVersionLocalizations/${loc.id}`, { data: { type: "appStoreVersionLocalizations", id: loc.id, attributes } });
+    console.log("version text: description, keywords, promotional, URLs (what's new not editable on a first release)");
+  } else console.log("version text: description, keywords, promotional, what's new, URLs");
+}
 
 // 5. Version attributes: copyright, manual release.
 await must("PATCH", `/v1/appStoreVersions/${version.id}`, { data: { type: "appStoreVersions", id: version.id, attributes: { copyright: section("Copyright"), releaseType: "MANUAL" } } });
@@ -103,13 +110,15 @@ console.log("content rights: no third-party content");
   } else console.log("availability: already set");
 }
 
-// 9. Review detail: contact, notes, demo account when given.
-{
-  const attributes = { contactFirstName: "Cameron", contactLastName: "Jackson", contactEmail: "CJ@guysinc.org", notes: limit("review notes", section("Review notes"), 4000), demoAccountRequired: true };
+// 9. Review detail: contact, notes, demo account. Apple requires a phone number to create it, so this
+// step runs only with REVIEW_PHONE set (CJ's, never written down here); DEMO_USER/DEMO_PASSWORD add the account.
+if (process.env.REVIEW_PHONE) {
+  const attributes = { contactFirstName: "Cameron", contactLastName: "Jackson", contactEmail: "CJ@guysinc.org", contactPhone: process.env.REVIEW_PHONE,
+    notes: limit("review notes", section("Review notes"), 4000), demoAccountRequired: true };
   if (process.env.DEMO_USER) { attributes.demoAccountName = process.env.DEMO_USER; attributes.demoAccountPassword = process.env.DEMO_PASSWORD; }
   const existing = await must("GET", `/v1/appStoreVersions/${version.id}/appStoreReviewDetail`);
   if (existing.data) await must("PATCH", `/v1/appStoreReviewDetails/${existing.data.id}`, { data: { type: "appStoreReviewDetails", id: existing.data.id, attributes } });
   else await must("POST", "/v1/appStoreReviewDetails", { data: { type: "appStoreReviewDetails", attributes, relationships: { appStoreVersion: { data: { type: "appStoreVersions", id: version.id } } } } });
-  console.log(`review detail: contact, notes${process.env.DEMO_USER ? ", demo account" : ""} (phone left for CJ)`);
-}
+  console.log(`review detail: contact, notes${process.env.DEMO_USER ? ", demo account" : ""}`);
+} else console.log("review detail: skipped, set REVIEW_PHONE (and DEMO_USER/DEMO_PASSWORD) to file it");
 console.log("done");

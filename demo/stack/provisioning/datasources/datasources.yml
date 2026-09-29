@@ -1,0 +1,10 @@
+apiVersion: 1
+# One synthetic data source: every dashboard and rule draws from Grafana's own TestData plugin.
+datasources:
+  - orgId: 1
+    name: Demo data
+    uid: demo-testdata
+    type: grafana-testdata-datasource
+    access: proxy
+    isDefault: true
+    editable: false

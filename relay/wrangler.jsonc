@@ -11,15 +11,16 @@
   "vars": {
     // The Grafana origins this relay serves. A device may only register through one of these; the relay asks
     // that Grafana who the caller is. Comma separated for several.
-    "GRAFANA_URLS": "https://grafana.gicloud.org",
+    "GRAFANA_URLS": "https://grafana.gicloud.org,https://demo.brazier.gicloud.org",
     "RELAY_URL": "https://brazier.gicloud.org",
     // How the app signs in to each Grafana through its identity provider, published at /.well-known/brazier.
     // The estate: Keystone's public PKCE client for the app; Grafana's JWT auth trusts that provider.
     "SIGN_IN": "{\"https://grafana.gicloud.org\":{\"issuer\":\"https://keystone.gicloud.org/application/o/brazier/\",\"clientId\":\"vgG1mB1fiCSYrsS2Y7zK7CMd5GdlE5USYP5tIqJh\",\"name\":\"Guys Inc\"}}",
     // Label matcher -> Grafana user (login or email). "*" is the default owner. A value may be a list.
-    "ROUTES": "{\"site=meade-manor\":\"dmeade@damp.meme\",\"*\":\"cjackson@guysinc.org\"}",
+    "ROUTES": "{\"site=demo\":\"reviewer\",\"site=meade-manor\":\"dmeade@damp.meme\",\"*\":\"cjackson@guysinc.org\"}",
     // Org id -> name, for the lock screen and the payload; the app reads the same names from Grafana.
-    "ORGS": "{\"1\":\"Infrastructure\",\"2\":\"Guys Inc Public\",\"3\":\"Personal\",\"4\":\"Meade Manor\"}",
+    // Org names per Grafana origin (flat when one Grafana): the estate's four, the reviewer's demo.
+    "ORGS": "{\"https://grafana.gicloud.org\":{\"1\":\"Infrastructure\",\"2\":\"Guys Inc Public\",\"3\":\"Personal\",\"4\":\"Meade Manor\"},\"https://demo.brazier.gicloud.org\":{\"1\":\"Demo\"}}",
     "APNS_TEAM_ID": "7VM43528YK",
     "APNS_TOPIC": "org.guysinc.brazier",
     // The APNs key id; the key itself is the APNS_KEY secret. Empty until the key exists.

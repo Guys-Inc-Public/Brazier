@@ -1,5 +1,5 @@
 import { env, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
-import { buildPayload, sentKey } from "../src/notify";
+import { buildPayload, sentKey, parseOrgs, orgName } from "../src/notify";
 import { readPrefs } from "../src/index";
 import { inQuietHours, level, localMinutes, meets } from "../src/severity";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -533,6 +533,18 @@ describe("organizations", () => {
     const synthetic = buildPayload({ ...alert, labels: { alertname: "DatasourceNoData", rulename: "Exporter", datasource_uid: "prometheus" } } as never, undefined, 1, "Infrastructure") as { aps: { alert: { title: string; subtitle?: string } } };
     expect(synthetic.aps.alert.title).toBe("Exporter · no data");
     expect(synthetic.aps.alert.subtitle).toBe("Infrastructure · prometheus");
+  });
+
+  it("ORGS may be keyed by Grafana origin when the relay serves several", () => {
+    const flat = parseOrgs(JSON.stringify({ "1": "Infrastructure" }));
+    expect(orgName(flat, "https://grafana.gicloud.org/", 1)).toBe("Infrastructure");
+    expect(orgName(flat, undefined, 1)).toBe("Infrastructure");
+    const scoped = parseOrgs(JSON.stringify({ "https://grafana.gicloud.org": { "1": "Infrastructure" }, "https://demo.brazier.gicloud.org/": { "1": "Demo" }, "2": "Flat two" }));
+    expect(orgName(scoped, "https://grafana.gicloud.org/", 1)).toBe("Infrastructure");
+    expect(orgName(scoped, "https://DEMO.brazier.gicloud.org/", 1)).toBe("Demo");
+    expect(orgName(scoped, "https://other.example/", 2)).toBe("Flat two");
+    expect(orgName(scoped, "not a url", 1)).toBeUndefined();
+    expect(orgName(parseOrgs("[1]"), "https://grafana.gicloud.org/", 1)).toBeUndefined();
   });
 
   it("names the org from ORGS on a real push, and ignores a broken ORGS", async () => {

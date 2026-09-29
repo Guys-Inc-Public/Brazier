@@ -1,0 +1,577 @@
+{
+ "uid": "demo-containers",
+ "title": "Containers",
+ "tags": [
+  "demo",
+  "containers"
+ ],
+ "timezone": "browser",
+ "editable": false,
+ "graphTooltip": 1,
+ "schemaVersion": 39,
+ "version": 1,
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "refresh": "1m",
+ "panels": [
+  {
+   "id": 21,
+   "type": "row",
+   "title": "01 \u00b7 Now",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "id": 22,
+   "type": "stat",
+   "title": "Running",
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "csv_metric_values",
+     "stringInput": "6"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#f6f4f7",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "orientation": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 23,
+   "type": "stat",
+   "title": "Restarting",
+   "gridPos": {
+    "x": 6,
+    "y": 1,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "csv_metric_values",
+     "stringInput": "1"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#22dcb3",
+        "value": null
+       },
+       {
+        "color": "#fea845",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "orientation": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 24,
+   "type": "stat",
+   "title": "Exited",
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "csv_metric_values",
+     "stringInput": "1"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#22dcb3",
+        "value": null
+       },
+       {
+        "color": "#f43a57",
+        "value": 1
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "orientation": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 25,
+   "type": "stat",
+   "title": "Restarts, 24 h",
+   "gridPos": {
+    "x": 18,
+    "y": 1,
+    "w": 6,
+    "h": 4
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "csv_metric_values",
+     "stringInput": "4"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#f6f4f7",
+        "value": null
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "colorMode": "value",
+    "graphMode": "none",
+    "textMode": "value",
+    "orientation": "auto",
+    "justifyMode": "auto"
+   }
+  },
+  {
+   "id": 26,
+   "type": "table",
+   "title": "Every container",
+   "gridPos": {
+    "x": 0,
+    "y": 5,
+    "w": 24,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "A",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "csv_content",
+     "csvContent": "container,host,state,restarts,cpu,memory\nplex,demo-host,running,0,12.4,1.9\ngrafana,demo-host,running,0,3.1,0.4\nkeystone,demo-edge,running,0,6.8,0.9\nmeridian,demo-edge,running,0,2.2,0.5\ndemo-app,demo-host,restarting,3,0.0,0.1\nmealie,demo-host,running,0,1.4,0.3\nseerr,demo-host,exited,1,0.0,0.0\nimmich,demo-nas,running,0,18.9,2.6"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     }
+    },
+    "overrides": [
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "state"
+      },
+      "properties": [
+       {
+        "id": "custom.cellOptions",
+        "value": {
+         "type": "color-text"
+        }
+       },
+       {
+        "id": "mappings",
+        "value": [
+         {
+          "type": "value",
+          "options": {
+           "running": {
+            "color": "#22dcb3",
+            "index": 0
+           },
+           "restarting": {
+            "color": "#fea845",
+            "index": 1
+           },
+           "exited": {
+            "color": "#f43a57",
+            "index": 2
+           }
+          }
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "cpu"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "percent"
+       }
+      ]
+     },
+     {
+      "matcher": {
+       "id": "byName",
+       "options": "memory"
+      },
+      "properties": [
+       {
+        "id": "unit",
+        "value": "decgbytes"
+       }
+      ]
+     }
+    ]
+   },
+   "options": {
+    "showHeader": true,
+    "cellHeight": "sm",
+    "sortBy": [
+     {
+      "displayName": "cpu",
+      "desc": true
+     }
+    ]
+   }
+  },
+  {
+   "id": 27,
+   "type": "row",
+   "title": "02 \u00b7 Load",
+   "gridPos": {
+    "x": 0,
+    "y": 14,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "id": 28,
+   "type": "timeseries",
+   "title": "CPU by container",
+   "gridPos": {
+    "x": 0,
+    "y": 15,
+    "w": 12,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "C0",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 12,
+     "min": 0,
+     "max": 60,
+     "spread": 2,
+     "noise": 1,
+     "alias": "plex"
+    },
+    {
+     "refId": "C1",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 19,
+     "min": 0,
+     "max": 60,
+     "spread": 2,
+     "noise": 1,
+     "alias": "immich"
+    },
+    {
+     "refId": "C2",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 7,
+     "min": 0,
+     "max": 60,
+     "spread": 2,
+     "noise": 1,
+     "alias": "keystone"
+    },
+    {
+     "refId": "C3",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 3,
+     "min": 0,
+     "max": 60,
+     "spread": 2,
+     "noise": 1,
+     "alias": "grafana"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   }
+  },
+  {
+   "id": 29,
+   "type": "timeseries",
+   "title": "Memory by container",
+   "gridPos": {
+    "x": 12,
+    "y": 15,
+    "w": 12,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "M0",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 1.9,
+     "min": 0.1,
+     "max": 4,
+     "spread": 0.05,
+     "noise": 0.02,
+     "alias": "plex"
+    },
+    {
+     "refId": "M1",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 2.6,
+     "min": 0.1,
+     "max": 4,
+     "spread": 0.05,
+     "noise": 0.02,
+     "alias": "immich"
+    },
+    {
+     "refId": "M2",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 0.9,
+     "min": 0.1,
+     "max": 4,
+     "spread": 0.05,
+     "noise": 0.02,
+     "alias": "keystone"
+    },
+    {
+     "refId": "M3",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 0.4,
+     "min": 0.1,
+     "max": 4,
+     "spread": 0.05,
+     "noise": 0.02,
+     "alias": "grafana"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "unit": "decgbytes"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   }
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "annotations": {
+  "list": []
+ }
+}

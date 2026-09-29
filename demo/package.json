@@ -1,0 +1,21 @@
+{
+  "name": "brazier-demo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "The demo Grafana's front door: a Worker that proxies demo.brazier.gicloud.org to the box that runs it.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.143.0"
+  }
+}

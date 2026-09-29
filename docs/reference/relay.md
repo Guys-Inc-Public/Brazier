@@ -26,7 +26,7 @@ review: each release of the relay
 | `SIGN_IN` | JSON, Grafana origin → `{ issuer, clientId, name }`; the estate's points at Keystone's `brazier` client (provider 46) with name Guys Inc | wrangler var |
 | `RELAY_URL` | this relay's public address, named in the discovery document (`https://brazier.gicloud.org`) | wrangler var |
 | `ROUTES` | JSON, label matcher → Grafana user or users (login or email), first match wins, `*` default; `label=value` or `label=~regex`; the estate's is `{"site=meade-manor":"dmeade@damp.meme","*":"cjackson@guysinc.org"}` | wrangler var |
-| `ORGS` | optional JSON, org id (string) → display name, for the lock screen and the payload; bad JSON is logged and ignored; the estate's is `{"1":"Infrastructure","2":"Guys Inc Public","3":"Personal","4":"Meade Manor"}` | wrangler var |
+| `ORGS` | optional JSON, org id (string) → display name, for the lock screen and the payload; bad JSON is logged and ignored; the estate's is `{"1":"Infrastructure","2":"Guys Inc Public","3":"Personal","4":"Meade Manor"}` | wrangler var | Keyed by Grafana origin when the relay serves several: `{"https://a.example":{"1":"Ops"},"https://b.example":{"1":"Demo"}}`.
 | KV namespace | one (`DEVICES`), 7-day TTL on `sent/*` | wrangler.jsonc binding |
 
 Grafana's own `DatasourceError` and `DatasourceNoData` alerts (a rule's query failed or came back empty) are titled by the rule and the datasource, "Out-of-memory kill · query failed", with the error text as the body; their templated summary reads "[no value]" and is ignored. Route them to nobody with `"alertname=DatasourceError": []` in `ROUTES` if they are unwanted.

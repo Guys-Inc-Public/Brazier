@@ -1,0 +1,53 @@
+# The demo Grafana for Apple's reviewer (and anyone trying Brazier without a Grafana of their own).
+# Runs on the OVH box under /opt/brazier-demo; reached through the brazier-demo Worker at
+# https://demo.brazier.gicloud.org, which adds the X-Demo-Key header the gate insists on.
+# Secrets live in .env beside this file (see .env.example), never in the repository.
+services:
+  grafana:
+    image: grafana/grafana:13.2.3
+    container_name: brazier-demo-grafana
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3010:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: https://demo.brazier.gicloud.org/
+      GF_SERVER_DOMAIN: demo.brazier.gicloud.org
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_CSRF_TRUSTED_ORIGINS: demo.brazier.gicloud.org
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_DEFAULT_THEME: dark
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+      GF_UNIFIED_ALERTING_MIN_INTERVAL: 10s
+      # The Brazier relay's contact point signs webhook bodies with this.
+      BRAZIER_WEBHOOK_SECRET: ${BRAZIER_WEBHOOK_SECRET}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./provisioning:/etc/grafana/provisioning:ro
+
+  # The only public face of the box for this stack: 403 without the key the Worker adds. Port 8880
+  # because a Worker may only fetch an outside host on the ports Cloudflare proxies, and 8080 is taken.
+  gate:
+    image: nginx:alpine
+    container_name: brazier-demo-gate
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8880:80"
+    environment:
+      DEMO_KEY: ${DEMO_KEY}
+      # Only DEMO_* is substituted into the template; nginx's own $host and friends stay.
+      NGINX_ENVSUBST_FILTER: ^DEMO_
+    volumes:
+      - ./gate/templates:/etc/nginx/templates:ro
+    depends_on:
+      - grafana
+
+volumes:
+  grafana_data: {}

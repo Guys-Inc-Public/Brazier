@@ -1,0 +1,449 @@
+{
+ "uid": "demo-hosts",
+ "title": "Hosts",
+ "tags": [
+  "demo",
+  "hosts"
+ ],
+ "timezone": "browser",
+ "editable": false,
+ "graphTooltip": 1,
+ "schemaVersion": 39,
+ "version": 1,
+ "time": {
+  "from": "now-6h",
+  "to": "now"
+ },
+ "refresh": "1m",
+ "panels": [
+  {
+   "id": 13,
+   "type": "row",
+   "title": "01 \u00b7 Load",
+   "gridPos": {
+    "x": 0,
+    "y": 0,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "id": 14,
+   "type": "timeseries",
+   "title": "CPU",
+   "gridPos": {
+    "x": 0,
+    "y": 1,
+    "w": 12,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "C0",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 20,
+     "min": 2,
+     "max": 98,
+     "spread": 4,
+     "noise": 2,
+     "alias": "demo-host"
+    },
+    {
+     "refId": "C1",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 35,
+     "min": 2,
+     "max": 98,
+     "spread": 4,
+     "noise": 2,
+     "alias": "demo-edge"
+    },
+    {
+     "refId": "C2",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 50,
+     "min": 2,
+     "max": 98,
+     "spread": 4,
+     "noise": 2,
+     "alias": "demo-nas"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   }
+  },
+  {
+   "id": 15,
+   "type": "timeseries",
+   "title": "Memory in use",
+   "gridPos": {
+    "x": 12,
+    "y": 1,
+    "w": 12,
+    "h": 9
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "M0",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 40,
+     "min": 10,
+     "max": 95,
+     "spread": 1,
+     "noise": 0.5,
+     "alias": "demo-host"
+    },
+    {
+     "refId": "M1",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 52,
+     "min": 10,
+     "max": 95,
+     "spread": 1,
+     "noise": 0.5,
+     "alias": "demo-edge"
+    },
+    {
+     "refId": "M2",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 64,
+     "min": 10,
+     "max": 95,
+     "spread": 1,
+     "noise": 0.5,
+     "alias": "demo-nas"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "unit": "percent"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   }
+  },
+  {
+   "id": 16,
+   "type": "row",
+   "title": "02 \u00b7 Disk",
+   "gridPos": {
+    "x": 0,
+    "y": 10,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "id": 17,
+   "type": "bargauge",
+   "title": "Disk used",
+   "gridPos": {
+    "x": 0,
+    "y": 11,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "D0",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "csv_metric_values",
+     "stringInput": "0.91",
+     "alias": "demo-host /"
+    },
+    {
+     "refId": "D1",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "csv_metric_values",
+     "stringInput": "0.74",
+     "alias": "demo-nas /mnt/pool"
+    },
+    {
+     "refId": "D2",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "csv_metric_values",
+     "stringInput": "0.38",
+     "alias": "demo-edge /"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "thresholds"
+     },
+     "unit": "percentunit",
+     "thresholds": {
+      "mode": "absolute",
+      "steps": [
+       {
+        "color": "#22dcb3",
+        "value": null
+       },
+       {
+        "color": "#fea845",
+        "value": 0.7
+       },
+       {
+        "color": "#f43a57",
+        "value": 0.85
+       }
+      ]
+     }
+    },
+    "overrides": []
+   },
+   "options": {
+    "reduceOptions": {
+     "calcs": [
+      "lastNotNull"
+     ],
+     "fields": "",
+     "values": false
+    },
+    "orientation": "horizontal",
+    "displayMode": "lcd",
+    "showUnfilled": true,
+    "minVizWidth": 8
+   }
+  },
+  {
+   "id": 18,
+   "type": "timeseries",
+   "title": "Disk write, MB/s",
+   "gridPos": {
+    "x": 12,
+    "y": 11,
+    "w": 12,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "W0",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 12,
+     "min": 0,
+     "max": 240,
+     "spread": 12,
+     "noise": 6,
+     "alias": "demo-host"
+    },
+    {
+     "refId": "W1",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 12,
+     "min": 0,
+     "max": 240,
+     "spread": 12,
+     "noise": 6,
+     "alias": "demo-edge"
+    },
+    {
+     "refId": "W2",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 12,
+     "min": 0,
+     "max": 240,
+     "spread": 12,
+     "noise": 6,
+     "alias": "demo-nas"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "unit": "MBs"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   }
+  },
+  {
+   "id": 19,
+   "type": "row",
+   "title": "03 \u00b7 Network",
+   "gridPos": {
+    "x": 0,
+    "y": 19,
+    "w": 24,
+    "h": 1
+   },
+   "collapsed": false,
+   "panels": []
+  },
+  {
+   "id": 20,
+   "type": "timeseries",
+   "title": "Throughput",
+   "gridPos": {
+    "x": 0,
+    "y": 20,
+    "w": 24,
+    "h": 8
+   },
+   "datasource": {
+    "type": "grafana-testdata-datasource",
+    "uid": "demo-testdata"
+   },
+   "targets": [
+    {
+     "refId": "N0",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 40,
+     "min": 0,
+     "max": 900,
+     "spread": 30,
+     "noise": 10,
+     "alias": "in"
+    },
+    {
+     "refId": "N1",
+     "datasource": {
+      "type": "grafana-testdata-datasource",
+      "uid": "demo-testdata"
+     },
+     "scenarioId": "random_walk",
+     "startValue": 12,
+     "min": 0,
+     "max": 400,
+     "spread": 15,
+     "noise": 5,
+     "alias": "out"
+    }
+   ],
+   "fieldConfig": {
+    "defaults": {
+     "color": {
+      "mode": "palette-classic"
+     },
+     "unit": "Mbits"
+    },
+    "overrides": []
+   },
+   "options": {
+    "legend": {
+     "displayMode": "list",
+     "placement": "bottom",
+     "showLegend": true
+    },
+    "tooltip": {
+     "mode": "multi"
+    }
+   }
+  }
+ ],
+ "templating": {
+  "list": []
+ },
+ "annotations": {
+  "list": []
+ }
+}
