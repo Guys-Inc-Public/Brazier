@@ -99,6 +99,7 @@ beforeAll(async () => {
   testEnv = {
     ...env,
     GRAFANA_URLS: `${GRAFANA}, https://other.test`,
+    SIGN_IN: JSON.stringify({ [GRAFANA]: { issuer: "https://idp.test/application/o/brazier/", clientId: "client-123", name: "Test Org" } }),
     ROUTES: JSON.stringify({ "site=meade-manor": "dmeade@damp.meme", "host=~ovh|oc-.*": ["cjackson@guysinc.org", "dmeade"], "*": "CJackson@guysinc.org" }),
     WEBHOOK_SECRET: SECRET,
     APNS_KEY: await makeApnsKeyPem(),
@@ -142,6 +143,28 @@ describe("health", () => {
     const body = (await (await call(new Request("https://relay.test/health"))).json()) as Record<string, unknown>;
     testEnv.APNS_KEY = saved;
     expect(body.apns).toBe(false);
+  });
+});
+
+describe("well-known", () => {
+  it("publishes the served Grafanas and how to sign in to them", async () => {
+    const res = await call(new Request("https://relay.test/.well-known/brazier"));
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      relay: { version: expect.any(String) },
+      grafana: {
+        [GRAFANA]: { signIn: { issuer: "https://idp.test/application/o/brazier/", clientId: "client-123", name: "Test Org" } },
+        "https://other.test": {},
+      },
+    });
+  });
+
+  it("works without any sign-in configured", async () => {
+    const saved = testEnv.SIGN_IN;
+    testEnv.SIGN_IN = undefined;
+    const body = (await (await call(new Request("https://relay.test/.well-known/brazier"))).json()) as { grafana: Record<string, unknown> };
+    testEnv.SIGN_IN = saved;
+    expect(body.grafana).toEqual({ [GRAFANA]: {}, "https://other.test": {} });
   });
 });
 

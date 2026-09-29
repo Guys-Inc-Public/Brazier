@@ -13,13 +13,15 @@ review: each release of the relay
 | `POST /devices` | Headers: `X-Grafana-Url: <origin>` plus exactly one of `Authorization: Bearer <service account token>`, `Cookie: grafana_session=<value>`, `X-JWT-Assertion: <OIDC token>`; the relay asks that Grafana `/api/user` (decision 0004). The origin must be on `GRAFANA_URLS` (403 otherwise; 401 when Grafana rejects the credential; 502 when it cannot be reached) | Stores `{ token, platform, environment, name, added, grafana }` under `devices/<login, lower case>` and `alias/<email>` → login; `environment` is `production` or `sandbox` and picks the APNs host; idempotent |
 | `GET /devices` | same | The caller's devices, tokens elided |
 | `DELETE /devices/:token` | same | Removes it; called on sign-out and when a server is removed |
-| `GET /health` | none | 200, version, KV reachable, whether APNs and the webhook secret are configured |
+| `GET /health` | none | 200, version, KV reachable, whether APNs and the webhook secret are configured, the served Grafanas |
+| `GET /.well-known/brazier` | none | `{ relay: { version }, grafana: { <origin>: { signIn?: { issuer, clientId, name } } } }`: the app reads it after the relay address is entered and, when `signIn` is present, offers "Sign in with <name>" through the system sheet (passkeys work there; they do not in an in-app web view) |
 
 | Setting | Value | Kept where |
 |---|---|---|
 | `WEBHOOK_SECRET` | random 32 bytes, also on the Grafana contact point | wrangler secret |
 | `APNS_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` | the .p8, its id, the team, the bundle id; replaced by the push grant in a self-hosted relay | wrangler secrets |
 | `GRAFANA_URLS` | the Grafana origins this relay serves, comma separated; the estate's is `https://grafana.gicloud.org` | wrangler var |
+| `SIGN_IN` | JSON, Grafana origin → `{ issuer, clientId, name }`; the estate's points at Keystone's `brazier` client (provider 46) with name Guys Inc | wrangler var |
 | `ROUTES` | JSON, label matcher → Grafana user or users (login or email), first match wins, `*` default; `label=value` or `label=~regex`; the estate's is `{"site=meade-manor":"dmeade@damp.meme","*":"cjackson@guysinc.org"}` | wrangler var |
 | KV namespace | one (`DEVICES`), 7-day TTL on `sent/*` | wrangler.jsonc binding |
 

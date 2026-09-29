@@ -3,6 +3,9 @@ export interface Env {
   DEVICES: KVNamespace;
   /** Comma-separated Grafana origins this relay serves; device registration is refused for any other. */
   GRAFANA_URLS: string;
+  /** Optional JSON: Grafana origin → { issuer, clientId, name }: how the app signs in to that Grafana through
+   *  its identity provider (Grafana's JWT auth must trust that provider). Published at /.well-known/brazier. */
+  SIGN_IN?: string;
   ROUTES: string;
   APNS_TEAM_ID: string;
   APNS_TOPIC: string;
@@ -11,7 +14,7 @@ export interface Env {
   APNS_KEY?: string;
 }
 
-export const VERSION = "0.2.0";
+export const VERSION = "0.3.0";
 
 /** Seven days, in seconds: how long a sent firing/resolved pair is remembered for dedupe. */
 export const SENT_TTL_SECONDS = 7 * 24 * 60 * 60;

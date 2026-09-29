@@ -24,5 +24,8 @@ The relay no longer verifies identity tokens. A device registers with the same c
 - **The app's own accounts on a Brazier service.** A second identity, a database, and nothing the user did not already have in Grafana.
 - **Hand the relay a Grafana API key of its own.** Broad, long-lived, and still leaves the question of which person a device belongs to.
 
+## Amendment, 2026-09-29
+CJ's first run on a real phone found the in-page sign-in useless for the estate: iOS does not allow passkeys in an in-app web view, and Keystone requires one. So the relay also publishes, per Grafana, the identity provider the app may sign in with (`/.well-known/brazier`, from `SIGN_IN`); when it does, the app's recommended sign-in is "Sign in with <name>" through the system sign-in sheet, where passkeys work, and Grafana's JWT auth (0003) carries the token. The in-page sign-in stays for Grafanas that use a password; manual issuer and client id entry moves out of the walkthrough into the server's advanced settings.
+
 ## Consequences
 The credential the app holds reaches the relay once per registration, so a relay must be run by someone the user already trusts with their Grafana session: the Grafana admin, or themselves. That is the self-hosted-first shape of 0002 and rules out a shared relay for strangers until the push grant of milestone 4 exists. Grafana sessions expire after inactivity; the app must notice a 401 and offer to sign in again.
