@@ -16,7 +16,7 @@ Decided 2026-09-28. Change here first, then everywhere the row names.
 | Bundle id | `org.guysinc.brazier` | Xcode, App Store Connect, APNs topic, relay `APNS_TOPIC` |
 | URL scheme | `brazier://`, callback `brazier://auth/callback` | Keystone redirect URI, ASWebAuthenticationSession |
 | Keystone application | slug `brazier`, provider 46, public client, PKCE S256, grants authorization_code + refresh_token, scopes openid profile email offline_access, redirect `brazier://auth/callback` | created 2026-09-28; client id `vgG1mB1fiCSYrsS2Y7zK7CMd5GdlE5USYP5tIqJh`; issuer `https://keystone.gicloud.org/application/o/brazier/`; JWKS `https://keystone.gicloud.org/application/o/brazier/jwks/` |
-| Relay hostname | `brazier.gicloud.org` | Worker custom domain; Grafana contact point URL `https://brazier.gicloud.org/grafana` |
+| Relay hostname | `brazier.gicloud.org` | Worker custom domain; Grafana contact point URL `https://brazier.gicloud.org/grafana`; also a Worker route `grafana.gicloud.org/.well-known/brazier*` (zone gicloud.org) serving the discovery document on Grafana's hostname |
 | Worker | `brazier-relay`, KV binding `DEVICES` (namespace `66a331538cd347f1b026da1f61090bea`, title `brazier-relay-DEVICES`) | `relay/wrangler.jsonc`; deployed 2026-09-29 |
 | Apple team | 7VM43528YK | signing, APNs provider token |
 | Apple App ID | `org.guysinc.brazier`, id WFDZ9J88XU, universal, Push Notifications on | registered 2026-09-28 through the App Store Connect API |

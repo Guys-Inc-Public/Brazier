@@ -14,7 +14,7 @@ review: each release of the relay
 | `GET /devices` | same | The caller's devices, tokens elided |
 | `DELETE /devices/:token` | same | Removes it; called on sign-out and when a server is removed |
 | `GET /health` | none | 200, version, KV reachable, whether APNs and the webhook secret are configured, the served Grafanas |
-| `GET /.well-known/brazier` | none | `{ relay: { version }, grafana: { <origin>: { signIn?: { issuer, clientId, name } } } }`: the app reads it after the relay address is entered and, when `signIn` is present, offers "Sign in with <name>" through the system sheet (passkeys work there; they do not in an in-app web view) |
+| `GET /.well-known/brazier` | none | Discovery: `{ relay: { url, version }, grafana: { <origin>: { signIn?: { issuer, clientId, name } } } }`. Served on the relay and, through a Worker route, on `grafana.gicloud.org/.well-known/brazier`, so the app finds the relay and the sign-in from the Grafana address alone; a DNS TXT `_brazier.<host>` is the alternative signpost. When `signIn` is present the app offers "Sign in with <name>" through the system sheet (passkeys work there; they do not in an in-app web view) |
 
 | Setting | Value | Kept where |
 |---|---|---|
@@ -22,6 +22,7 @@ review: each release of the relay
 | `APNS_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` | the .p8, its id, the team, the bundle id; replaced by the push grant in a self-hosted relay | wrangler secrets |
 | `GRAFANA_URLS` | the Grafana origins this relay serves, comma separated; the estate's is `https://grafana.gicloud.org` | wrangler var |
 | `SIGN_IN` | JSON, Grafana origin → `{ issuer, clientId, name }`; the estate's points at Keystone's `brazier` client (provider 46) with name Guys Inc | wrangler var |
+| `RELAY_URL` | this relay's public address, named in the discovery document (`https://brazier.gicloud.org`) | wrangler var |
 | `ROUTES` | JSON, label matcher → Grafana user or users (login or email), first match wins, `*` default; `label=value` or `label=~regex`; the estate's is `{"site=meade-manor":"dmeade@damp.meme","*":"cjackson@guysinc.org"}` | wrangler var |
 | KV namespace | one (`DEVICES`), 7-day TTL on `sent/*` | wrangler.jsonc binding |
 

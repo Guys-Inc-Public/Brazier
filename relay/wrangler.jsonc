@@ -12,6 +12,7 @@
     // The Grafana origins this relay serves. A device may only register through one of these; the relay asks
     // that Grafana who the caller is. Comma separated for several.
     "GRAFANA_URLS": "https://grafana.gicloud.org",
+    "RELAY_URL": "https://brazier.gicloud.org",
     // How the app signs in to each Grafana through its identity provider, published at /.well-known/brazier.
     // The estate: Keystone's public PKCE client for the app; Grafana's JWT auth trusts that provider.
     "SIGN_IN": "{\"https://grafana.gicloud.org\":{\"issuer\":\"https://keystone.gicloud.org/application/o/brazier/\",\"clientId\":\"vgG1mB1fiCSYrsS2Y7zK7CMd5GdlE5USYP5tIqJh\",\"name\":\"Guys Inc\"}}",
@@ -23,5 +24,9 @@
     "APNS_KEY_ID": "PTDYNZWJJJ"
   },
   // Secrets, set with `wrangler secret put`: WEBHOOK_SECRET, APNS_KEY
-  "routes": [{ "pattern": "brazier.gicloud.org", "custom_domain": true }]
+  "routes": [
+    { "pattern": "brazier.gicloud.org", "custom_domain": true },
+    // Discovery on the Grafana's own hostname: only this path is intercepted; everything else still reaches Grafana.
+    { "pattern": "grafana.gicloud.org/.well-known/brazier*", "zone_name": "gicloud.org" }
+  ]
 }

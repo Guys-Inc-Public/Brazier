@@ -5,7 +5,9 @@
  *    GET    /devices           the caller's devices
  *    DELETE /devices/:token    forget one
  *    GET    /health            liveness, version, whether APNs and the secret are configured
- *    GET    /.well-known/brazier  which Grafanas this relay serves and how the app signs in to them
+ *    GET    /.well-known/brazier  discovery: this relay's address, the Grafanas it serves and how the app
+ *                              signs in to them. Also served on each Grafana's own hostname through a
+ *                              Worker route, so the app finds everything from the Grafana address alone.
  */
 import { type Env, VERSION, json, apnsConfigured } from "./env";
 import { verifyGrafanaSignature } from "./hmac";
@@ -86,7 +88,7 @@ async function handleList(req: Request, env: Env): Promise<Response> {
 
 /** What the app needs before sign-in: the Grafanas served here and, per Grafana, the identity provider
  *  to sign in with (issuer + public client id), when the admin has set one. */
-function handleWellKnown(env: Env): Response {
+function handleWellKnown(env: Env, requestOrigin: string): Response {
   let allowed: Set<string>;
   try {
     allowed = allowedOrigins(env.GRAFANA_URLS);
@@ -106,7 +108,8 @@ function handleWellKnown(env: Env): Response {
     const s = signIn[origin];
     grafana[origin] = s && s.issuer && s.clientId ? { signIn: { issuer: s.issuer, clientId: s.clientId, name: s.name ?? new URL(s.issuer).hostname } } : {};
   }
-  return json({ relay: { version: VERSION }, grafana }, 200, { "cache-control": "public, max-age=300" });
+  const relayUrl = env.RELAY_URL || (allowed.has(requestOrigin) ? undefined : requestOrigin);
+  return json({ relay: { url: relayUrl, version: VERSION }, grafana }, 200, { "cache-control": "public, max-age=300", "access-control-allow-origin": "*" });
 }
 
 async function handleHealth(env: Env): Promise<Response> {
@@ -125,7 +128,7 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
     if (req.method === "GET" && path === "/health") return handleHealth(env);
-    if (req.method === "GET" && path === "/.well-known/brazier") return handleWellKnown(env);
+    if (req.method === "GET" && path === "/.well-known/brazier") return handleWellKnown(env, url.origin);
     if (req.method === "POST" && path === "/grafana") return handleGrafana(req, env);
     if (req.method === "POST" && path === "/devices") return handleRegister(req, env);
     if (req.method === "GET" && path === "/devices") return handleList(req, env);

@@ -99,6 +99,7 @@ beforeAll(async () => {
   testEnv = {
     ...env,
     GRAFANA_URLS: `${GRAFANA}, https://other.test`,
+    RELAY_URL: undefined, // derived from the request origin in these tests unless a test sets it
     SIGN_IN: JSON.stringify({ [GRAFANA]: { issuer: "https://idp.test/application/o/brazier/", clientId: "client-123", name: "Test Org" } }),
     ROUTES: JSON.stringify({ "site=meade-manor": "dmeade@damp.meme", "host=~ovh|oc-.*": ["cjackson@guysinc.org", "dmeade"], "*": "CJackson@guysinc.org" }),
     WEBHOOK_SECRET: SECRET,
@@ -151,12 +152,22 @@ describe("well-known", () => {
     const res = await call(new Request("https://relay.test/.well-known/brazier"));
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      relay: { version: expect.any(String) },
+      relay: { url: "https://relay.test", version: expect.any(String) },
       grafana: {
         [GRAFANA]: { signIn: { issuer: "https://idp.test/application/o/brazier/", clientId: "client-123", name: "Test Org" } },
         "https://other.test": {},
       },
     });
+  });
+
+  it("names its own address when served on a Grafana's hostname (Worker route) via RELAY_URL", async () => {
+    testEnv.RELAY_URL = "https://relay.example";
+    const body = (await (await call(new Request(`${GRAFANA}/.well-known/brazier`))).json()) as { relay: { url: string } };
+    testEnv.RELAY_URL = undefined;
+    expect(body.relay.url).toBe("https://relay.example");
+    // and without RELAY_URL it cannot guess from a Grafana's origin
+    const none = (await (await call(new Request(`${GRAFANA}/.well-known/brazier`))).json()) as { relay: { url?: string } };
+    expect(none.relay.url).toBeUndefined();
   });
 
   it("works without any sign-in configured", async () => {
