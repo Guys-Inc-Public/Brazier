@@ -13,6 +13,9 @@ struct BrazierPush: Decodable {
     let silenceURL: String?
     let externalURL: String?
     let folder: String?
+    /// The organization the alert fired in, when the relay knew it.
+    let orgId: Int?
+    let org: String?
 
     init?(userInfo: [AnyHashable: Any]) {
         guard let object = userInfo["brazier"],
@@ -33,7 +36,9 @@ struct BrazierPush: Decodable {
             annotations: annotations,
             state: status == "firing" ? "Alerting" : "Normal",
             activeAt: startsAt,
-            value: nil
+            value: nil,
+            orgId: orgId,
+            orgName: org
         )
     }
 

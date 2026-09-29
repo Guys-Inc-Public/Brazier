@@ -3,8 +3,8 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
     @State private var relayText = ""
-    @State private var registering = false
     @State private var testing = false
+    @State private var path: [String] = []
     @State private var relayHealth: RelayHealth?
     @State private var relayFault: String?
 
@@ -20,7 +20,7 @@ struct SettingsView: View {
     }
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             List {
                 Section {
                     NavigationLink { ServersView() } label: {
@@ -36,52 +36,25 @@ struct SettingsView: View {
                 } header: { Eyebrow("servers").textCase(nil) }
 
                 Section {
+                    NavigationLink(value: "notifications") {
+                        HStack(spacing: Brand.Space.label) {
+                            Text("Notifications").font(BrandFont.bodyStrong).foregroundStyle(Brand.Tone.paper)
+                            Spacer()
+                            switch model.push.registration {
+                            case .pass: StateChip(word: "REGISTERED", signal: .ok)
+                            case .pending: StateChip(word: "PENDING", signal: .wait)
+                            case .refuse: StateChip(word: "REFUSE", signal: .stop)
+                            case .none: StateChip(word: model.push.deviceToken == nil ? "OFF" : "NOT SENT", signal: .none)
+                            }
+                        }
+                        .frame(minHeight: Brand.hitTarget)
+                    }
+                    .listRowBackground(Brand.Tone.ink)
+                    .listRowSeparatorTint(Brand.Tone.line)
+                } header: { Eyebrow("notifications").textCase(nil) }
+
+                Section {
                     relayField
-                    row("Permission") { StateChip(word: model.push.authorizationWord, signal: model.push.authorizationSignal) }
-                    if model.push.authorization == .notDetermined {
-                        Button("Allow notifications") { Task { _ = await model.push.requestPermission() } }
-                            .buttonStyle(ThrowButtonStyle())
-                            .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-                    }
-                    row("Device token") {
-                        if let token = model.push.deviceToken {
-                            Text("\(token.prefix(8))…\(token.suffix(6))").font(BrandFont.code).foregroundStyle(Brand.Tone.paper)
-                        } else {
-                            StateChip(word: "NONE", signal: .none)
-                        }
-                    }
-                    row("Environment") { Text(PushManager.apnsEnvironment).font(BrandFont.code).foregroundStyle(Brand.Tone.paper) }
-                    row("Registration") {
-                        switch model.push.registration {
-                        case .none: StateChip(word: "NOT SENT", signal: .none)
-                        case .pending: StateChip(word: "PENDING", signal: .wait)
-                        case .pass(let at): StateChip(word: "PASS \(at.formatted(date: .omitted, time: .standard))", signal: .ok)
-                        case .refuse: StateChip(word: "REFUSE", signal: .stop)
-                        }
-                    }
-                    if let who = model.push.registeredAs {
-                        row("Filed under") { Text(who).font(BrandFont.code).foregroundStyle(Brand.Tone.paper) }
-                    }
-                    if case .refuse(let why) = model.push.registration {
-                        Text(why).font(BrandFont.small).foregroundStyle(Brand.Tone.paper)
-                            .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-                    }
-                    if model.push.deviceToken == nil {
-                        Interlock(reason: "No device token yet; allow notifications first")
-                            .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-                    } else if relayURL == nil {
-                        Interlock(reason: "Enter a relay address to register this phone")
-                            .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-                    } else {
-                        Button(registering ? "Registering…" : "Register this phone with the relay") {
-                            guard !registering else { return }
-                            registering = true
-                            model.store.relayURL = relayURL
-                            Task { await model.registerPush(); registering = false }
-                        }
-                        .buttonStyle(ThrowButtonStyle(primary: false))
-                        .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-                    }
                 } header: { Eyebrow("push").textCase(nil) }
 
                 if !model.faults.isEmpty {
@@ -113,9 +86,15 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .principal) { HeaderMark() } }
+            .navigationDestination(for: String.self) { _ in NotificationsView() }
             .task {
                 relayText = model.store.relayURL?.absoluteString ?? ""
                 await model.push.refreshAuthorization()
+                #if DEBUG
+                if ["notifications", "settings-notifications"].contains(ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? ""), path.isEmpty {
+                    path = ["notifications"]
+                }
+                #endif
             }
         }
     }

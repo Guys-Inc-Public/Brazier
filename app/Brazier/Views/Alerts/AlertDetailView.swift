@@ -65,6 +65,7 @@ struct AlertDetailView: View {
             }
             Text(live.name).font(BrandFont.title).foregroundStyle(Brand.Tone.paper)
             HStack(spacing: Brand.Space.inline) {
+                if let org = live.orgName { Eyebrow("\(org) ·") }
                 Eyebrow(live.folder.isEmpty ? "no folder" : live.folder)
                 if let since = live.activeDate {
                     Eyebrow("· since \(since.formatted(date: .abbreviated, time: .shortened))")
@@ -78,7 +79,7 @@ struct AlertDetailView: View {
             Button("Silence…") { showSilence = true }
                 .buttonStyle(ThrowButtonStyle())
             if let server = model.selectedServer,
-               let url = URL(string: "\(server.url.absoluteString)/alerting/list?search=\(live.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")") {
+               let url = URL(string: "\(server.url.absoluteString)/alerting/list?search=\(live.name.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")\(live.orgId.map { "&orgId=\($0)" } ?? "")") {
                 Link(destination: url) {
                     HStack { Text("Open in Grafana"); Image(systemName: "arrow.up.right") }
                 }

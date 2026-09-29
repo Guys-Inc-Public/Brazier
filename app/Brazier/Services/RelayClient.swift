@@ -80,6 +80,12 @@ struct RelayClient {
         let platform: String
         let environment: String
         let name: String
+        let prefs: NotificationPrefs?
+    }
+
+    struct PreferencesSet: Decodable {
+        let ok: Bool
+        let prefs: NotificationPrefs?
     }
 
     func health() async throws -> RelayHealth {
@@ -100,12 +106,22 @@ struct RelayClient {
         return directory
     }
 
-    func register(token: String, environment: String, name: String, server: Server, credential: Credential) async throws -> RelayRegistration {
+    func register(token: String, environment: String, name: String, server: Server, credential: Credential, prefs: NotificationPrefs? = nil) async throws -> RelayRegistration {
         var request = authed("POST", path: "devices", server: server, credential: credential)
-        request.httpBody = try JSONEncoder().encode(Body(token: token, platform: "ios", environment: environment, name: name))
+        request.httpBody = try JSONEncoder().encode(Body(token: token, platform: "ios", environment: environment, name: name, prefs: prefs))
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         let data = try await send(request, origin: server.origin)
         guard let result = try? JSONDecoder().decode(RelayRegistration.self, from: data) else { throw RelayError.unreadable }
+        return result
+    }
+
+    /// What to push to this device, kept on its record so the relay filters before Apple hears of it.
+    func setPreferences(token: String, prefs: NotificationPrefs, server: Server, credential: Credential) async throws -> PreferencesSet {
+        var request = authed("PUT", path: "devices/\(token)/preferences", server: server, credential: credential)
+        request.httpBody = try JSONEncoder().encode(prefs)
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        let data = try await send(request, origin: server.origin)
+        guard let result = try? JSONDecoder().decode(PreferencesSet.self, from: data) else { throw RelayError.unreadable }
         return result
     }
 

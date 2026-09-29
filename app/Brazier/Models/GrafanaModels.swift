@@ -12,6 +12,32 @@ struct GrafanaUser: Decodable {
     let isGrafanaAdmin: Bool?
 }
 
+/// One organization the signed-in user belongs to, from /api/user/orgs.
+struct GrafanaOrg: Decodable, Identifiable, Hashable {
+    let orgId: Int
+    let name: String
+    let role: String?
+
+    var id: Int { orgId }
+}
+
+/// Which of a server's organizations the tabs read: every one, or one of them.
+enum OrgSelection: Equatable, Hashable {
+    case all
+    case one(Int)
+
+    var stored: String {
+        switch self {
+        case .all: return "all"
+        case .one(let id): return String(id)
+        }
+    }
+
+    init(stored: String?) {
+        if let stored, let id = Int(stored) { self = .one(id) } else { self = .all }
+    }
+}
+
 struct AlertsEnvelope: Decodable {
     let status: String
     let data: AlertsData
@@ -21,16 +47,49 @@ struct AlertsData: Decodable {
     let alerts: [GrafanaAlert]
 }
 
-/// One alert instance from /api/prometheus/grafana/api/v1/alerts.
+/// One alert instance from /api/prometheus/grafana/api/v1/alerts, tagged with the organization it
+/// was read from (Grafana never writes that into the instance itself).
 struct GrafanaAlert: Decodable, Identifiable, Hashable {
     let labels: [String: String]
     let annotations: [String: String]
     let state: String
     let activeAt: String?
     let value: String?
+    /// The organization the read was scoped to; nil when the server was read without one.
+    var orgId: Int?
+    var orgName: String?
+
+    private enum CodingKeys: String, CodingKey { case labels, annotations, state, activeAt, value }
+
+    init(labels: [String: String], annotations: [String: String], state: String, activeAt: String?, value: String?, orgId: Int? = nil, orgName: String? = nil) {
+        self.labels = labels
+        self.annotations = annotations
+        self.state = state
+        self.activeAt = activeAt
+        self.value = value
+        self.orgId = orgId
+        self.orgName = orgName
+    }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        labels = try c.decodeIfPresent([String: String].self, forKey: .labels) ?? [:]
+        annotations = try c.decodeIfPresent([String: String].self, forKey: .annotations) ?? [:]
+        state = try c.decode(String.self, forKey: .state)
+        activeAt = try c.decodeIfPresent(String.self, forKey: .activeAt)
+        value = try c.decodeIfPresent(String.self, forKey: .value)
+    }
+
+    /// The same instance, marked as read from an organization.
+    func tagged(_ org: GrafanaOrg) -> GrafanaAlert {
+        var copy = self
+        copy.orgId = org.orgId
+        copy.orgName = org.name
+        return copy
+    }
 
     var id: String {
-        labels.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
+        "\(orgId ?? 0):" + labels.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ",")
     }
 
     var name: String { labels["alertname"] ?? "alert" }
@@ -107,8 +166,29 @@ struct Silence: Decodable, Identifiable {
     let comment: String
     let createdBy: String
     let status: SilenceStatus
+    /// The organization the silence was read from; silences never cross organizations.
+    var orgId: Int?
 
     struct SilenceStatus: Decodable { let state: String }
+
+    private enum CodingKeys: String, CodingKey { case id, matchers, startsAt, endsAt, comment, createdBy, status }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        matchers = try c.decodeIfPresent([Matcher].self, forKey: .matchers) ?? []
+        startsAt = try c.decode(String.self, forKey: .startsAt)
+        endsAt = try c.decode(String.self, forKey: .endsAt)
+        comment = try c.decodeIfPresent(String.self, forKey: .comment) ?? ""
+        createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy) ?? ""
+        status = try c.decode(SilenceStatus.self, forKey: .status)
+    }
+
+    func tagged(_ org: GrafanaOrg) -> Silence {
+        var copy = self
+        copy.orgId = org.orgId
+        return copy
+    }
 
     var endDate: Date? { GrafanaDates.parse(endsAt) }
 }
@@ -133,8 +213,31 @@ struct SearchHit: Decodable, Identifiable, Hashable {
     let tags: [String]
     let isStarred: Bool?
     let folderTitle: String?
+    /// The organization the search ran in; a dashboard uid is only unique within one.
+    var orgId: Int?
+    var orgName: String?
 
-    var id: String { uid }
+    private enum CodingKeys: String, CodingKey { case uid, title, url, type, tags, isStarred, folderTitle }
+
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        uid = try c.decode(String.self, forKey: .uid)
+        title = try c.decode(String.self, forKey: .title)
+        url = try c.decodeIfPresent(String.self, forKey: .url) ?? ""
+        type = try c.decodeIfPresent(String.self, forKey: .type) ?? "dash-db"
+        tags = try c.decodeIfPresent([String].self, forKey: .tags) ?? []
+        isStarred = try c.decodeIfPresent(Bool.self, forKey: .isStarred)
+        folderTitle = try c.decodeIfPresent(String.self, forKey: .folderTitle)
+    }
+
+    func tagged(_ org: GrafanaOrg) -> SearchHit {
+        var copy = self
+        copy.orgId = org.orgId
+        copy.orgName = org.name
+        return copy
+    }
+
+    var id: String { "\(orgId ?? 0):\(uid)" }
 }
 
 enum GrafanaDates {

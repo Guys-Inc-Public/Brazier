@@ -28,6 +28,8 @@ final class PushManager {
     var registration: Registration = .none
     /// The Grafana login the relay filed this phone under, once it answered.
     var registeredAs: String?
+    /// The last hand-over of what to send (Settings › Notifications) to the relay.
+    var preferences: Registration = .none
 
     static func configureCategories() {
         let actions = Self.actions.map {

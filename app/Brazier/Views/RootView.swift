@@ -31,6 +31,16 @@ struct RootView: View {
         .onChange(of: model.pendingAlert) { _, alert in
             if alert != nil { tab = .alerts }
         }
+        #if DEBUG
+        .onAppear {
+            // Screenshot hook: with a seeded server, BRAZIER_SHOT=dashboards|notifications opens that tab.
+            switch ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? "" {
+            case "dashboards", "dashboard": tab = .dashboards
+            case "notifications", "settings-notifications": tab = .settings
+            default: break
+            }
+        }
+        #endif
     }
 
     private var tabs: some View {

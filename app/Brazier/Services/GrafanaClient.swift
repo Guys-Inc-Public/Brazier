@@ -45,45 +45,45 @@ struct GrafanaClient {
         try await get("api/user")
     }
 
-    func alerts() async throws -> [GrafanaAlert] {
-        let envelope: AlertsEnvelope = try await get("api/prometheus/grafana/api/v1/alerts")
+    /// The organizations the signed-in user belongs to. A service account answers with its one.
+    func orgs() async throws -> [GrafanaOrg] {
+        try await get("api/user/orgs")
+    }
+
+    /// Alerts, silences and search are read per organization: the `X-Grafana-Org-Id` header scopes the
+    /// call without switching the account's current organization in Grafana.
+    func alerts(org: Int? = nil) async throws -> [GrafanaAlert] {
+        let envelope: AlertsEnvelope = try await get("api/prometheus/grafana/api/v1/alerts", org: org)
         return envelope.data.alerts
     }
 
-    func silences() async throws -> [Silence] {
-        try await get("api/alertmanager/grafana/api/v2/silences")
+    func silences(org: Int? = nil) async throws -> [Silence] {
+        try await get("api/alertmanager/grafana/api/v2/silences", org: org)
     }
 
-    func createSilence(_ silence: NewSilence) async throws -> SilenceCreated {
-        try await post("api/alertmanager/grafana/api/v2/silences", body: silence)
+    func createSilence(_ silence: NewSilence, org: Int? = nil) async throws -> SilenceCreated {
+        try await post("api/alertmanager/grafana/api/v2/silences", body: silence, org: org)
     }
 
-    func search(_ query: String) async throws -> [SearchHit] {
+    func search(_ query: String, org: Int? = nil) async throws -> [SearchHit] {
         var items = [URLQueryItem(name: "type", value: "dash-db"), URLQueryItem(name: "limit", value: "200")]
         if !query.isEmpty { items.append(URLQueryItem(name: "query", value: query)) }
-        return try await get("api/search", query: items)
-    }
-
-    /// A request for a page in the web view, carrying the credential on the first load.
-    func pageRequest(path: String) async throws -> URLRequest {
-        var request = URLRequest(url: server.url.appending(path: path))
-        try await credentials.credential(for: server).apply(to: &request)
-        return request
+        return try await get("api/search", query: items, org: org)
     }
 
     // MARK: Transport
 
-    func get<T: Decodable>(_ path: String, query: [URLQueryItem] = [], authenticated: Bool = true) async throws -> T {
-        let data = try await send("GET", path, query: query, body: nil, authenticated: authenticated)
+    func get<T: Decodable>(_ path: String, query: [URLQueryItem] = [], authenticated: Bool = true, org: Int? = nil) async throws -> T {
+        let data = try await send("GET", path, query: query, body: nil, authenticated: authenticated, org: org)
         return try decode(data)
     }
 
-    func post<B: Encodable, T: Decodable>(_ path: String, body: B) async throws -> T {
-        let data = try await send("POST", path, query: [], body: try JSONEncoder().encode(body), authenticated: true)
+    func post<B: Encodable, T: Decodable>(_ path: String, body: B, org: Int? = nil) async throws -> T {
+        let data = try await send("POST", path, query: [], body: try JSONEncoder().encode(body), authenticated: true, org: org)
         return try decode(data)
     }
 
-    private func send(_ method: String, _ path: String, query: [URLQueryItem], body: Data?, authenticated: Bool, retried: Bool = false) async throws -> Data {
+    private func send(_ method: String, _ path: String, query: [URLQueryItem], body: Data?, authenticated: Bool, org: Int?, retried: Bool = false) async throws -> Data {
         var components = URLComponents(url: server.url.appending(path: path), resolvingAgainstBaseURL: false)!
         if !query.isEmpty { components.queryItems = query }
         var request = URLRequest(url: components.url!)
@@ -92,6 +92,7 @@ struct GrafanaClient {
             request.httpBody = body
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         }
+        if let org { request.setValue(String(org), forHTTPHeaderField: "X-Grafana-Org-Id") }
         if authenticated {
             try await credentials.credential(for: server, forceRefresh: retried).apply(to: &request)
         }
@@ -114,7 +115,7 @@ struct GrafanaClient {
                 throw AuthError.sessionEnded
             }
             if !retried, server.isOIDC {
-                return try await send(method, path, query: query, body: body, authenticated: authenticated, retried: true)
+                return try await send(method, path, query: query, body: body, authenticated: authenticated, org: org, retried: true)
             }
         }
         guard (200..<300).contains(status) else {

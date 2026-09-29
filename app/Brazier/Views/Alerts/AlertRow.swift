@@ -2,6 +2,8 @@ import SwiftUI
 
 struct AlertRow: View {
     let alert: GrafanaAlert
+    /// Say which organization the row came from; only when more than one is on the screen.
+    var showOrg = false
 
     private var metaLine: String {
         var parts: [String] = []
@@ -18,7 +20,12 @@ struct AlertRow: View {
                 if let summary = alert.summary, !summary.isEmpty {
                     Text(summary).font(BrandFont.small).foregroundStyle(Brand.Tone.muted).lineLimit(2)
                 }
-                Text(metaLine).font(BrandFont.meta).foregroundStyle(Brand.Tone.muted).lineLimit(1)
+                HStack(spacing: Brand.Space.inline) {
+                    if showOrg, let org = alert.orgName {
+                        StateChip(word: Self.chipWord(org), signal: .none).fixedSize()
+                    }
+                    Text(metaLine).font(BrandFont.meta).foregroundStyle(Brand.Tone.muted).lineLimit(1)
+                }
             }
             Spacer(minLength: 0)
             if let severity = alert.labels["severity"] {
@@ -27,5 +34,17 @@ struct AlertRow: View {
         }
         .padding(.vertical, Brand.Space.hairline)
         .frame(minHeight: Brand.hitTarget)
+    }
+
+    /// At most fourteen characters, cut between words: "Guys Inc Public" reads "Guys Inc", not "Guys Inc Publi".
+    static func chipWord(_ name: String) -> String {
+        guard name.count > 14 else { return name }
+        var kept = ""
+        for word in name.split(separator: " ") {
+            let next = kept.isEmpty ? String(word) : kept + " " + word
+            if next.count > 14 { break }
+            kept = next
+        }
+        return kept.isEmpty ? String(name.prefix(14)) : kept
     }
 }

@@ -6,12 +6,13 @@ struct AlertsView: View {
     @State private var query = ""
 
     private enum Row: Identifiable {
-        case folder(String)
+        /// A folder heading: its key (organization and folder) and the words to show.
+        case folder(String, String)
         case alert(GrafanaAlert)
 
         var id: String {
             switch self {
-            case .folder(let name): return "folder:\(name)"
+            case .folder(let key, _): return "folder:\(key)"
             case .alert(let alert): return "alert:\(alert.id)"
             }
         }
@@ -67,13 +68,13 @@ struct AlertsView: View {
                     Section {
                         ForEach(rows) { row in
                             switch row {
-                            case .folder(let name):
-                                Eyebrow(name.isEmpty ? "no folder" : name)
+                            case .folder(_, let title):
+                                Eyebrow(title)
                                     .listRowBackground(Brand.Tone.ink)
                                     .listRowSeparator(.hidden)
                                     .padding(.top, Brand.Space.inline)
                             case .alert(let alert):
-                                NavigationLink(value: alert) { AlertRow(alert: alert) }
+                                NavigationLink(value: alert) { AlertRow(alert: alert, showOrg: model.showsOrgChips) }
                                     .listRowBackground(Brand.Tone.ink)
                                     .listRowSeparatorTint(Brand.Tone.line)
                             }
@@ -131,6 +132,7 @@ struct AlertsView: View {
         return model.alerts.filter { alert in
             alert.name.lowercased().contains(q)
                 || (alert.summary?.lowercased().contains(q) ?? false)
+                || (alert.orgName?.lowercased().contains(q) ?? false)
                 || alert.labels.values.contains { $0.lowercased().contains(q) }
         }
     }
@@ -139,16 +141,21 @@ struct AlertsView: View {
         filtered.filter { $0.phase == phase }.count
     }
 
+    /// Within a phase: by organization, then folder, then rule, then place. A folder heading names its
+    /// organization too when more than one is on the screen, since two organizations may share a folder name.
     private func rows(for phase: AlertPhase) -> [Row] {
         let alerts = filtered
             .filter { $0.phase == phase }
-            .sorted { ($0.folder, $0.name, $0.placeLine) < ($1.folder, $1.name, $1.placeLine) }
+            .sorted { ($0.orgName ?? "", $0.folder, $0.name, $0.placeLine) < ($1.orgName ?? "", $1.folder, $1.name, $1.placeLine) }
         var rows: [Row] = []
-        var folder: String?
+        var group: String?
         for alert in alerts {
-            if alert.folder != folder {
-                folder = alert.folder
-                rows.append(.folder(alert.folder))
+            let key = "\(alert.orgId ?? 0)/\(alert.folder)"
+            if key != group {
+                group = key
+                let folder = alert.folder.isEmpty ? "no folder" : alert.folder
+                let title = model.showsOrgChips ? [alert.orgName, folder].compactMap { $0 }.joined(separator: " · ") : folder
+                rows.append(.folder(key, title))
             }
             rows.append(.alert(alert))
         }

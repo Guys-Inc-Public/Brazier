@@ -174,7 +174,7 @@ struct SignInStep: View {
     }
 
     private var tokenCard: some View {
-        MethodCard(title: "Service account token", text: "For a Grafana without a browser sign-in, or for a read-only watcher.", open: $tokenOpen) {
+        MethodCard(title: "Service account token", text: "For a Grafana without a browser sign-in, or for a read-only watcher. A sign-in gate in front of Grafana blocks tokens unless it lets /api/ through.", open: $tokenOpen) {
             VStack(alignment: .leading, spacing: Brand.Space.inline) {
                 NumberedLine(n: 1, text: "In Grafana: Administration › Users and access › Service accounts › Add service account.")
                 NumberedLine(n: 2, text: "Role Viewer to watch, Editor to silence. Then Add service account token.")

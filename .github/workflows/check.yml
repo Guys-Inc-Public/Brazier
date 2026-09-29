@@ -19,3 +19,19 @@ jobs:
       - run: npm ci --legacy-peer-deps --no-fund --no-audit
       - run: npm run check
       - run: npm test
+  # The contract between Brazier and Grafana, against the official images of every major the app supports.
+  contract:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        grafana:
+          - grafana/grafana-oss:11.6.5
+          - grafana/grafana-oss:12.4.3
+          - grafana/grafana:13.2.3
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: bash contract/run.sh ${{ matrix.grafana }}

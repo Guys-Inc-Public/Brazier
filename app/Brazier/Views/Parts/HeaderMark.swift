@@ -19,7 +19,8 @@ struct HeaderMark: View {
     }
 }
 
-/// Account, top right: the mounted server and who we are on it. Opens the server list.
+/// Account, top right: the mounted server and who we are on it, or which of its organizations the
+/// tabs read when it has more than one. Opens the server list and the organization switcher.
 struct ServerMenu: View {
     @Environment(AppModel.self) private var model
 
@@ -48,6 +49,30 @@ struct ServerMenu: View {
             if model.store.servers.isEmpty {
                 Text("No servers yet")
             }
+            if model.hasSeveralOrgs {
+                Section("Organizations") {
+                    Button {
+                        model.orgSelection = .all
+                    } label: {
+                        if model.orgSelection == .all {
+                            Label("All organizations", systemImage: "checkmark")
+                        } else {
+                            Text("All organizations")
+                        }
+                    }
+                    ForEach(model.orgs) { org in
+                        Button {
+                            model.orgSelection = .one(org.orgId)
+                        } label: {
+                            if model.orgSelection == .one(org.orgId) {
+                                Label(org.name, systemImage: "checkmark")
+                            } else {
+                                Text(org.name)
+                            }
+                        }
+                    }
+                }
+            }
         } label: {
             HStack(spacing: Brand.Space.inline) {
                 VStack(alignment: .trailing, spacing: 1) {
@@ -55,7 +80,7 @@ struct ServerMenu: View {
                         .font(BrandFont.label)
                         .foregroundStyle(Brand.Tone.paper)
                         .lineLimit(1)
-                    Text(model.accountName ?? (model.selectedServer == nil ? "add one in settings" : "not signed in"))
+                    Text(secondLine)
                         .font(BrandFont.mono(10))
                         .foregroundStyle(Brand.Tone.muted)
                         .lineLimit(1)
@@ -64,6 +89,11 @@ struct ServerMenu: View {
             }
             .frame(minHeight: Brand.hitTarget)
         }
-        .accessibilityLabel("Server: \(model.selectedServer?.name ?? "none")")
+        .accessibilityLabel("Server: \(model.selectedServer?.name ?? "none")\(model.hasSeveralOrgs ? ", \(model.orgSelectionWord)" : "")")
+    }
+
+    private var secondLine: String {
+        if model.hasSeveralOrgs { return model.orgSelectionWord }
+        return model.accountName ?? (model.selectedServer == nil ? "add one in settings" : "not signed in")
     }
 }
