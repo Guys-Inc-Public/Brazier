@@ -29,7 +29,7 @@ Start the build from the guide: verify the two Grafana assumptions, create the i
 - On the Mac, simulators are per user and a simulator build with signing disabled has no entitlements, so keychain writes fail silently; the Makefile signs ad hoc.
 
 ## Open
-- CJ: APNs key (.p8) into the relay (`wrangler secret put APNS_KEY`, `APNS_KEY_ID` in wrangler.jsonc), the App Store Connect app record, Daniel as internal tester, Branding-Standards PR #19 and #20.
+- CJ: APNs key (.p8) into the relay (`wrangler secret put APNS_KEY`, `APNS_KEY_ID` in wrangler.jsonc), the App Store Connect app record, Daniel as internal tester. (Branding-Standards PR #19 and #20 merged 2026-09-29; plugin 1.14.0.)
 - Grafana orgs 2, 3 and 4 (Guys Inc Public, Personal, Meade Manor) still notify in-app only; copy the `brazier` receiver per org when CJ wants their alerts on the phone.
 - First real push: register a phone, force an alert, silence it from the phone.
 - Milestone 3: dashboards web view session carry-over, uptime tiles, iPad.
