@@ -28,6 +28,8 @@ targets:
         CFBundleName: Brazier
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # HTTPS only, no proprietary encryption: answers the export compliance question so TestFlight can hand out builds at once.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen:
           UIColorName: LaunchBackground
         UIAppFonts:
