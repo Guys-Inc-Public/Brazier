@@ -6,7 +6,7 @@ driver: CJ, with Claude Code
 outcome: merged
 ---
 
-# Milestone 0 closed, the relay live, the app on TestFlight
+# Milestone 0 closed, the relay live, the app on TestFlight with its walkthrough
 
 ## Intent
 Start the build from the guide: verify the two Grafana assumptions, create the identities the app needs, ship the relay for the estate, and get the SwiftUI app compiling on the Mac mini.
@@ -20,6 +20,7 @@ Start the build from the guide: verify the two Grafana assumptions, create the i
 - Grafana contact point `brazier` (webhook, HMAC, resolved messages on) provisioned in org 1 and the org's root policy moved to it, loaded with the provisioning reload API, no restart. A temporary rule fired through it: the relay's log shows the signed webhooks verified, parsed and routed, with APNs reported unconfigured.
 - APNs: CJ's first key came out sandbox-only (Apple caps team-scoped push keys at two, held by Honeywick and Guys Inc Cloud); Honeywick's team key carried the relay for an hour, then CJ's second key `PTDYNZWJJJ` replaced it. Through the relay, a push to a bogus production token came back from Apple as BadDeviceToken and the device was dropped: transport, provider token and drop path exercised for real.
 - App Store Connect: CJ created the app record (6817156133). First archive and upload from the Mac mini as the claude user, cloud-managed distribution signing through the API key; `make archive upload` in `app/` via `scripts/remote.sh`. Version 0.1.0 build 1 uploaded and processing.
+- Direction change from CJ mid-session: no presets, public from the first moment, a walkthrough. Decision 0004: sign-in is the Grafana's own login page in a web view (password or SSO), session kept and renewed; token second; OIDC through JWT auth advanced. Relay 0.2.0 verifies a device's owner by asking that Grafana `/api/user` with the app's credential, only for origins on `GRAFANA_URLS`; devices filed by login with email aliases; proven live with a throwaway service-account token. App build 2: Welcome, Server (live probe), Sign in (three methods), Notifications (optional relay with a test, skippable), Done; every preset removed. Boards, architecture page and README follow.
 - `docs/reference/identifiers.md` and `relay.md` carry every id created tonight.
 
 ## What was learned
@@ -34,6 +35,6 @@ Start the build from the guide: verify the two Grafana assumptions, create the i
 - Cloudflare's browser check on brazier.gicloud.org refuses requests with no User-Agent; Grafana sends one, test clients must too.
 
 ## Open
-- CJ and Daniel: install from TestFlight, add the estate server, sign in through Keystone, allow notifications; then a forced alert proves the first real push and a silence from the phone closes milestone 2. Daniel needs the Keystone group `meade-manor-admins` to sign in.
+- CJ and Daniel: install build 2 from TestFlight, enter grafana.gicloud.org, sign in on Grafana's page through Keystone, enter the relay brazier.gicloud.org, allow notifications; then a forced alert proves the first real push and a silence from the phone closes milestone 2. Daniel needs the Keystone group `meade-manor-admins` to sign in. The session capture and its ten-minute rotation are unproven until then.
 - Grafana orgs 2, 3 and 4 (Guys Inc Public, Personal, Meade Manor) still notify in-app only; copy the `brazier` receiver per org when CJ wants their alerts on the phone.
 - Milestone 3: dashboards web view session carry-over, uptime tiles, iPad.
