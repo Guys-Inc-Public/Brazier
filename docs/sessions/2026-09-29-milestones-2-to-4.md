@@ -48,8 +48,12 @@ without a human; the checks that need a phone in a hand are listed under Open.
 - **App Store listing** filed through the API by `scripts/listing.mjs` from `docs/reference/listing.md`:
   subtitle, categories, age rating, description, keywords, URLs, copyright, manual release, no
   third-party content, free in every territory. `scripts/screenshots.mjs` uploads the screenshots.
-- **App build 6** (1.0 (6)): iPad layout, a dashboard's stat panels as native tiles through `/api/ds/query`,
-  the store screenshots. See the end of this record for its state.
+- **App build 6** (1.0 (6), uploaded to TestFlight 2026-09-29 ~21:10 UTC): on a regular width a split view
+  with the sections in a sidebar; a dashboard opens on its stat panels rendered natively (queries through
+  `/api/ds/query` as the panel wrote them, reduced by its calc, mapped, formatted and coloured by its field
+  config), Tiles and Page behind one switch; the twelve store screenshots (6.9-inch iPhone, 13-inch iPad)
+  taken against the demo and uploaded to App Store Connect. `scripts/release.mjs` attaches the processed
+  build to version 1.0.
 - Trademark: the App Store has no "Brazier" and a web search finds no software mark of that name; a proper
   TESS search is still CJ's.
 
