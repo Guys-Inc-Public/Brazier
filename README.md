@@ -33,6 +33,7 @@ There is no app yet. The repository holds the study, the architecture, the decis
 | `assets/brand/` | The mark (the Curl), icons and the pair with the Guys Inc symbol, from Branding-Standards |
 | `design/mark-rounds/` | Every mark considered before the Curl, with its generator |
 | `scripts/check.py` | CI: front matter on every docs page, valid JSON boards |
+| `scripts/site.py` | The docs site, built from this folder and published at <https://guys-inc-public.github.io/Brazier/> ([privacy](docs/privacy.md), [support](docs/support.md)) |
 
 ## Grafana
 
