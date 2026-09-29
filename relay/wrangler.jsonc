@@ -18,7 +18,7 @@
     "APNS_TEAM_ID": "7VM43528YK",
     "APNS_TOPIC": "org.guysinc.brazier",
     // The APNs key id; the key itself is the APNS_KEY secret. Empty until the key exists.
-    "APNS_KEY_ID": "4B7QX469NS"
+    "APNS_KEY_ID": "PTDYNZWJJJ"
   },
   // Secrets, set with `wrangler secret put`: WEBHOOK_SECRET, APNS_KEY
   "routes": [{ "pattern": "brazier.gicloud.org", "custom_domain": true }]
