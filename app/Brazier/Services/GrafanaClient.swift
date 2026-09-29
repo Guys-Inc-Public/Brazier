@@ -65,6 +65,17 @@ struct GrafanaClient {
         try await post("api/alertmanager/grafana/api/v2/silences", body: silence, org: org)
     }
 
+    /// A dashboard's JSON, for the tiles: its stat panels, their queries, units and thresholds.
+    func dashboardJSON(uid: String, org: Int? = nil) async throws -> DashboardDocument {
+        let response: DashboardResponse = try await get("api/dashboards/uid/\(uid)", org: org)
+        return response.dashboard
+    }
+
+    /// Runs a panel's queries the way its page would, through the data source proxy.
+    func query(_ request: DataQueryRequest, org: Int? = nil) async throws -> DataQueryResponse {
+        try await post("api/ds/query", body: request, org: org)
+    }
+
     func search(_ query: String, org: Int? = nil) async throws -> [SearchHit] {
         var items = [URLQueryItem(name: "type", value: "dash-db"), URLQueryItem(name: "limit", value: "200")]
         if !query.isEmpty { items.append(URLQueryItem(name: "query", value: query)) }

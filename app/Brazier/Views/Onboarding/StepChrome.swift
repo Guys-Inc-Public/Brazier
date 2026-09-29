@@ -1,5 +1,8 @@
 import SwiftUI
 
+/// A reading column on a wide screen: a step never runs edge to edge on an iPad.
+private let stepColumn: CGFloat = 680
+
 /// One step of the walkthrough: a title, a lead, the step's own content, and a footer pinned above the keyboard.
 struct StepPage<Content: View, Footer: View>: View {
     let title: String
@@ -15,12 +18,15 @@ struct StepPage<Content: View, Footer: View>: View {
                     Text(lead).font(BrandFont.body).foregroundStyle(Brand.Tone.muted)
                     content
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(maxWidth: stepColumn, alignment: .leading)
+                .frame(maxWidth: .infinity)
                 .padding(Brand.Space.card)
             }
             .scrollDismissesKeyboard(.interactively)
             Hairline()
             footer
+                .frame(maxWidth: stepColumn)
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, Brand.Space.card)
                 .padding(.vertical, Brand.Space.label)
         }

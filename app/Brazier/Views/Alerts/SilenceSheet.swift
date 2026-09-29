@@ -61,8 +61,10 @@ struct SilenceSheet: View {
             .background(Brand.Tone.ink)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
+                    // A plain toolbar button: the system draws the capsule, so the word is never cut.
                     Button(result == nil ? "Cancel" : "Done") { dismiss() }
-                        .buttonStyle(MomentaryButtonStyle())
+                        .font(BrandFont.label)
+                        .tint(Brand.Tone.hot)
                 }
             }
         }

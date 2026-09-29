@@ -4,6 +4,8 @@ import SwiftUI
 /// in a web view with the session carried over.
 struct DashboardsView: View {
     @Environment(AppModel.self) private var model
+    /// On a wide screen the list is a column and the chosen dashboard opens beside it; on a phone it pushes.
+    var selection: Binding<SearchHit?>?
     @State private var hits: [SearchHit] = []
     @State private var query = ""
     @State private var reading = false
@@ -32,10 +34,10 @@ struct DashboardsView: View {
             .navigationTitle("Dashboards")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .principal) { HeaderMark() }
+                if selection == nil { ToolbarItem(placement: .principal) { HeaderMark() } }
                 ToolbarItem(placement: .topBarTrailing) { ServerMenu() }
             }
-            .navigationDestination(for: SearchHit.self) { DashboardWebView(hit: $0) }
+            .navigationDestination(for: SearchHit.self) { DashboardView(hit: $0) }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 0) {
                     Hairline()
@@ -58,8 +60,23 @@ struct DashboardsView: View {
         "\(model.selectedServerID?.uuidString ?? "")|\(model.signedIn)|\(model.selectedOrgs.map { String($0.orgId) }.joined(separator: ","))"
     }
 
-    private var list: some View {
-        List {
+    @ViewBuilder private var list: some View {
+        if let selection {
+            List(selection: selection) { rows }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Dashboard, folder, tag")
+                .refreshable { await load() }
+        } else {
+            List { rows }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Dashboard, folder, tag")
+                .refreshable { await load() }
+        }
+    }
+
+    @ViewBuilder private var rows: some View {
             if filtered.isEmpty {
                 emptyReading
                     .listRowBackground(Brand.Tone.ink)
@@ -74,15 +91,22 @@ struct DashboardsView: View {
                     }
                 }
             }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Dashboard, folder, tag")
-        .refreshable { await load() }
     }
 
-    private func row(_ hit: SearchHit) -> some View {
-        NavigationLink(value: hit) {
+    @ViewBuilder private func row(_ hit: SearchHit) -> some View {
+        if selection != nil {
+            rowLabel(hit)
+                .tag(hit)
+                .listRowBackground(selection?.wrappedValue == hit ? Brand.Tone.raise : Brand.Tone.ink)
+                .listRowSeparatorTint(Brand.Tone.line)
+        } else {
+            NavigationLink(value: hit) { rowLabel(hit) }
+                .listRowBackground(Brand.Tone.ink)
+                .listRowSeparatorTint(Brand.Tone.line)
+        }
+    }
+
+    private func rowLabel(_ hit: SearchHit) -> some View {
             HStack(spacing: Brand.Space.label) {
                 Image(systemName: hit.isStarred == true ? "star.fill" : "rectangle.grid.2x2")
                     .foregroundStyle(hit.isStarred == true ? Brand.Tone.hot : Brand.Tone.muted)
@@ -98,9 +122,6 @@ struct DashboardsView: View {
                 }
             }
             .frame(minHeight: Brand.hitTarget)
-        }
-        .listRowBackground(Brand.Tone.ink)
-        .listRowSeparatorTint(Brand.Tone.line)
     }
 
     private var emptyReading: some View {
@@ -158,9 +179,12 @@ struct DashboardsView: View {
             asOf = Date()
             fault = nil
             #if DEBUG
-            // Screenshot hook: BRAZIER_SHOT=dashboard opens the first dashboard, so the session carry-over is seen.
-            if ProcessInfo.processInfo.environment["BRAZIER_SHOT"] == "dashboard", path.isEmpty, let first = found.first {
-                path.append(first)
+            // Screenshot hook: BRAZIER_SHOT=dashboard|tiles opens a dashboard (BRAZIER_SHOT_DASHBOARD names its
+            // uid, else the first), as the page or as tiles.
+            let env = ProcessInfo.processInfo.environment
+            if ["dashboard", "tiles"].contains(env["BRAZIER_SHOT"] ?? ""), path.isEmpty, selection?.wrappedValue == nil,
+               let pick = found.first(where: { $0.uid == env["BRAZIER_SHOT_DASHBOARD"] }) ?? found.first {
+                if let selection { selection.wrappedValue = pick } else { path.append(pick) }
             }
             #endif
         } catch {

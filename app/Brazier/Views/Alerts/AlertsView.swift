@@ -3,7 +3,10 @@ import SwiftUI
 /// The rack of alert instances on the mounted server: firing, pending, faults, normal.
 struct AlertsView: View {
     @Environment(AppModel.self) private var model
+    /// On a wide screen the rack is a column and the chosen alert opens beside it; on a phone it pushes.
+    var selection: Binding<GrafanaAlert?>?
     @State private var query = ""
+    @State private var path = NavigationPath()
 
     private enum Row: Identifiable {
         /// A folder heading: its key (organization and folder) and the words to show.
@@ -20,19 +23,28 @@ struct AlertsView: View {
 
     var body: some View {
         @Bindable var model = model
-        NavigationStack {
+        NavigationStack(path: $path) {
             content
                 .background(Brand.Tone.ink)
                 .navigationTitle("Alerts")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .principal) { HeaderMark() }
+                    if selection == nil { ToolbarItem(placement: .principal) { HeaderMark() } }
                     ToolbarItem(placement: .topBarTrailing) { ServerMenu() }
                 }
                 .navigationDestination(for: GrafanaAlert.self) { AlertDetailView(alert: $0) }
-                .navigationDestination(item: $model.pendingAlert) { AlertDetailView(alert: $0) }
+                .navigationDestination(item: selection == nil ? $model.pendingAlert : .constant(nil)) { AlertDetailView(alert: $0) }
                 .safeAreaInset(edge: .bottom, spacing: 0) { stampBar }
         }
+        #if DEBUG
+        .onChange(of: model.bay) { _, bay in
+            // Screenshot hook: BRAZIER_SHOT=silence opens the first firing alert (its silence sheet follows).
+            guard bay == .mounted, ProcessInfo.processInfo.environment["BRAZIER_SHOT"] == "silence",
+                  path.isEmpty, selection?.wrappedValue == nil,
+                  let first = model.alerts.filter({ $0.phase == .firing }).sorted(by: { $0.name < $1.name }).first else { return }
+            if let selection { selection.wrappedValue = first } else { path.append(first) }
+        }
+        #endif
     }
 
     @ViewBuilder
@@ -49,8 +61,23 @@ struct AlertsView: View {
         }
     }
 
-    private var list: some View {
-        List {
+    @ViewBuilder private var list: some View {
+        if let selection {
+            List(selection: selection) { rows }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .searchable(text: $query, prompt: "Alert, label, host")
+                .refreshable { await model.refresh() }
+        } else {
+            List { rows }
+                .listStyle(.plain)
+                .scrollContentBackground(.hidden)
+                .searchable(text: $query, prompt: "Alert, label, host")
+                .refreshable { await model.refresh() }
+        }
+    }
+
+    @ViewBuilder private var rows: some View {
             if !model.unkeptFaults.isEmpty {
                 FaultRail()
                     .listRowBackground(Brand.Tone.ink)
@@ -74,9 +101,16 @@ struct AlertsView: View {
                                     .listRowSeparator(.hidden)
                                     .padding(.top, Brand.Space.inline)
                             case .alert(let alert):
-                                NavigationLink(value: alert) { AlertRow(alert: alert, showOrg: model.showsOrgChips) }
-                                    .listRowBackground(Brand.Tone.ink)
-                                    .listRowSeparatorTint(Brand.Tone.line)
+                                if let selection {
+                                    AlertRow(alert: alert, showOrg: model.showsOrgChips)
+                                        .tag(alert)
+                                        .listRowBackground(selection.wrappedValue?.id == alert.id ? Brand.Tone.raise : Brand.Tone.ink)
+                                        .listRowSeparatorTint(Brand.Tone.line)
+                                } else {
+                                    NavigationLink(value: alert) { AlertRow(alert: alert, showOrg: model.showsOrgChips) }
+                                        .listRowBackground(Brand.Tone.ink)
+                                        .listRowSeparatorTint(Brand.Tone.line)
+                                }
                             }
                         }
                     } header: {
@@ -91,11 +125,6 @@ struct AlertsView: View {
                     }
                 }
             }
-        }
-        .listStyle(.plain)
-        .scrollContentBackground(.hidden)
-        .searchable(text: $query, prompt: "Alert, label, host")
-        .refreshable { await model.refresh() }
     }
 
     private var emptyReading: some View {

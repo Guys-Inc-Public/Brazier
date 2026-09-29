@@ -50,6 +50,15 @@ struct AlertDetailView: View {
         .sheet(isPresented: $showSilence) {
             SilenceSheet(alert: live) { result in latch = result }
         }
+        #if DEBUG
+        .task {
+            // Screenshot hook: BRAZIER_SHOT=silence shows the silence sheet over this alert.
+            if ProcessInfo.processInfo.environment["BRAZIER_SHOT"] == "silence" {
+                try? await Task.sleep(for: .seconds(1))
+                showSilence = true
+            }
+        }
+        #endif
     }
 
     private var header: some View {

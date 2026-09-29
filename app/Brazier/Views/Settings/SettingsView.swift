@@ -1,7 +1,12 @@
 import SwiftUI
 
+/// The screens Settings opens beside itself on a wide screen.
+enum SettingsPage: String, Hashable, CaseIterable { case servers, notifications }
+
 struct SettingsView: View {
     @Environment(AppModel.self) private var model
+    /// On a wide screen a chosen page opens in the column beside this list; on a phone it pushes.
+    var selection: Binding<SettingsPage?>?
     @State private var relayText = ""
     @State private var testing = false
     @State private var path: [String] = []
@@ -21,36 +26,84 @@ struct SettingsView: View {
 
     var body: some View {
         NavigationStack(path: $path) {
-            List {
+            settingsList
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .background(Brand.Tone.ink)
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { if selection == nil { ToolbarItem(placement: .principal) { HeaderMark() } } }
+            .navigationDestination(for: String.self) { _ in NotificationsView() }
+            .task {
+                relayText = model.store.relayURL?.absoluteString ?? ""
+                await model.push.refreshAuthorization()
+                #if DEBUG
+                if ["notifications", "settings-notifications"].contains(ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? ""), path.isEmpty {
+                    if let selection { selection.wrappedValue = .notifications } else { path = ["notifications"] }
+                }
+                #endif
+            }
+        }
+    }
+
+    @ViewBuilder private var settingsList: some View {
+        if let selection {
+            List(selection: selection) { sections }
+        } else {
+            List { sections }
+        }
+    }
+
+    private var serversRow: some View {
+        HStack(spacing: Brand.Space.label) {
+            Text("Servers").font(BrandFont.bodyStrong).foregroundStyle(Brand.Tone.paper)
+            Spacer()
+            Text("\(model.store.servers.count)").font(BrandFont.meta).foregroundStyle(Brand.Tone.muted)
+        }
+        .frame(minHeight: Brand.hitTarget)
+    }
+
+    private var notificationsRow: some View {
+        HStack(spacing: Brand.Space.label) {
+            Text("Notifications").font(BrandFont.bodyStrong).foregroundStyle(Brand.Tone.paper)
+            Spacer()
+            switch model.push.registration {
+            case .pass: StateChip(word: "REGISTERED", signal: .ok)
+            case .pending: StateChip(word: "PENDING", signal: .wait)
+            case .refuse: StateChip(word: "REFUSE", signal: .stop)
+            case .none: StateChip(word: model.push.deviceToken == nil ? "OFF" : "NOT SENT", signal: .none)
+            }
+        }
+        .frame(minHeight: Brand.hitTarget)
+    }
+
+    private func chosen(_ page: SettingsPage) -> Color {
+        selection?.wrappedValue == page ? Brand.Tone.raise : Brand.Tone.ink
+    }
+
+    @ViewBuilder private var sections: some View {
                 Section {
-                    NavigationLink { ServersView() } label: {
-                        HStack(spacing: Brand.Space.label) {
-                            Text("Servers").font(BrandFont.bodyStrong).foregroundStyle(Brand.Tone.paper)
-                            Spacer()
-                            Text("\(model.store.servers.count)").font(BrandFont.meta).foregroundStyle(Brand.Tone.muted)
-                        }
-                        .frame(minHeight: Brand.hitTarget)
+                    if selection != nil {
+                        serversRow.tag(SettingsPage.servers)
+                            .listRowBackground(chosen(.servers))
+                            .listRowSeparatorTint(Brand.Tone.line)
+                    } else {
+                        NavigationLink { ServersView() } label: { serversRow }
+                            .listRowBackground(Brand.Tone.ink)
+                            .listRowSeparatorTint(Brand.Tone.line)
                     }
-                    .listRowBackground(Brand.Tone.ink)
-                    .listRowSeparatorTint(Brand.Tone.line)
                 } header: { Eyebrow("servers").textCase(nil) }
 
                 Section {
-                    NavigationLink(value: "notifications") {
-                        HStack(spacing: Brand.Space.label) {
-                            Text("Notifications").font(BrandFont.bodyStrong).foregroundStyle(Brand.Tone.paper)
-                            Spacer()
-                            switch model.push.registration {
-                            case .pass: StateChip(word: "REGISTERED", signal: .ok)
-                            case .pending: StateChip(word: "PENDING", signal: .wait)
-                            case .refuse: StateChip(word: "REFUSE", signal: .stop)
-                            case .none: StateChip(word: model.push.deviceToken == nil ? "OFF" : "NOT SENT", signal: .none)
-                            }
-                        }
-                        .frame(minHeight: Brand.hitTarget)
+                    if selection != nil {
+                        notificationsRow.tag(SettingsPage.notifications)
+                            .listRowBackground(chosen(.notifications))
+                            .listRowSeparatorTint(Brand.Tone.line)
+                    } else {
+                        NavigationLink(value: "notifications") { notificationsRow }
+                            .listRowBackground(Brand.Tone.ink)
+                            .listRowSeparatorTint(Brand.Tone.line)
                     }
-                    .listRowBackground(Brand.Tone.ink)
-                    .listRowSeparatorTint(Brand.Tone.line)
                 } header: { Eyebrow("notifications").textCase(nil) }
 
                 Section {
@@ -79,24 +132,6 @@ struct SettingsView: View {
                     Text("Fonts: Archivo and Martian Mono, SIL Open Font License 1.1.").font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
                         .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
                 } header: { Eyebrow("about").textCase(nil) }
-            }
-            .listStyle(.plain)
-            .scrollContentBackground(.hidden)
-            .background(Brand.Tone.ink)
-            .navigationTitle("Settings")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .principal) { HeaderMark() } }
-            .navigationDestination(for: String.self) { _ in NotificationsView() }
-            .task {
-                relayText = model.store.relayURL?.absoluteString ?? ""
-                await model.push.refreshAuthorization()
-                #if DEBUG
-                if ["notifications", "settings-notifications"].contains(ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? ""), path.isEmpty {
-                    path = ["notifications"]
-                }
-                #endif
-            }
-        }
     }
 
     /// The relay address, a test against its /health, and the one line of what a relay is.
