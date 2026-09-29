@@ -6,7 +6,7 @@ driver: CJ, with Claude Code
 outcome: merged
 ---
 
-# Milestone 0 closed, the relay live, the app building
+# Milestone 0 closed, the relay live, the app on TestFlight
 
 ## Intent
 Start the build from the guide: verify the two Grafana assumptions, create the identities the app needs, ship the relay for the estate, and get the SwiftUI app compiling on the Mac mini.
@@ -18,6 +18,8 @@ Start the build from the guide: verify the two Grafana assumptions, create the i
 - Relay under `relay/`: one Worker, one KV namespace, HMAC over `timestamp:body` verified against a real Grafana capture, device registry keyed by lower-case username, label routing, 7-day dedupe, APNs with provider tokens, 410 drops the device. 19 tests in the Workers runtime, in CI. Deployed to `brazier.gicloud.org` with the webhook secret; a Blackbox probe watches `/health`.
 - App under `app/`: 3,034 lines of Swift, xcodegen project, Servers, Auth, GrafanaClient, Alerts, Push, Settings, a Dashboards stub, the brand's tones and fonts, the Curl. Builds for the simulator with zero warnings and lists the estate's alerts.
 - Grafana contact point `brazier` (webhook, HMAC, resolved messages on) provisioned in org 1 and the org's root policy moved to it, loaded with the provisioning reload API, no restart. A temporary rule fired through it: the relay's log shows the signed webhooks verified, parsed and routed, with APNs reported unconfigured.
+- APNs: CJ's first key came out sandbox-only (Apple caps team-scoped push keys at two, held by Honeywick and Guys Inc Cloud); Honeywick's team key carried the relay for an hour, then CJ's second key `PTDYNZWJJJ` replaced it. Through the relay, a push to a bogus production token came back from Apple as BadDeviceToken and the device was dropped: transport, provider token and drop path exercised for real.
+- App Store Connect: CJ created the app record (6817156133). First archive and upload from the Mac mini as the claude user, cloud-managed distribution signing through the API key; `make archive upload` in `app/` via `scripts/remote.sh`. Version 0.1.0 build 1 uploaded and processing.
 - `docs/reference/identifiers.md` and `relay.md` carry every id created tonight.
 
 ## What was learned
@@ -27,9 +29,11 @@ Start the build from the guide: verify the two Grafana assumptions, create the i
 - Grafana's OAuth-created user has the email as its login, so the JWT username claim is `email`, not `preferred_username` as the guide first said.
 - vitest-pool-workers 0.22 is a Vite plugin (`cloudflareTest`), has no `fetchMock`, and its workerd caps the compatibility date; npm 10.9.8 needs `--legacy-peer-deps` for this dependency set.
 - On the Mac, simulators are per user and a simulator build with signing disabled has no entitlements, so keychain writes fail silently; the Makefile signs ad hoc.
+- Headless archive: xcodebuild says "User interaction is not allowed" when the build user's keychain is locked or a freshly created signing key has no access list for codesign. The Makefile now unlocks `claude.keychain-db`, sets no timeout and runs `set-key-partition-list`. The first failed attempt still created a development certificate through the API with no local key; Xcode then refused to make another for "this machine" until that orphan was revoked (`DELETE /v1/certificates/:id`).
+- A brand-new APNs key takes about a minute to propagate at Apple; the first push right after loading it fails, the next succeeds.
+- Cloudflare's browser check on brazier.gicloud.org refuses requests with no User-Agent; Grafana sends one, test clients must too.
 
 ## Open
-- CJ: APNs key (.p8) into the relay (`wrangler secret put APNS_KEY`, `APNS_KEY_ID` in wrangler.jsonc), the App Store Connect app record, Daniel as internal tester. (Branding-Standards PR #19 and #20 merged 2026-09-29; plugin 1.14.0.)
+- CJ and Daniel: install from TestFlight, add the estate server, sign in through Keystone, allow notifications; then a forced alert proves the first real push and a silence from the phone closes milestone 2. Daniel needs the Keystone group `meade-manor-admins` to sign in.
 - Grafana orgs 2, 3 and 4 (Guys Inc Public, Personal, Meade Manor) still notify in-app only; copy the `brazier` receiver per org when CJ wants their alerts on the phone.
-- First real push: register a phone, force an alert, silence it from the phone.
 - Milestone 3: dashboards web view session carry-over, uptime tiles, iPad.

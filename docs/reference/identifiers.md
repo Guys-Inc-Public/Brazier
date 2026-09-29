@@ -20,7 +20,9 @@ Decided 2026-09-28. Change here first, then everywhere the row names.
 | Worker | `brazier-relay`, KV binding `DEVICES` (namespace `66a331538cd347f1b026da1f61090bea`, title `brazier-relay-DEVICES`) | `relay/wrangler.jsonc`; deployed 2026-09-29 |
 | Apple team | 7VM43528YK | signing, APNs provider token |
 | Apple App ID | `org.guysinc.brazier`, id WFDZ9J88XU, universal, Push Notifications on | registered 2026-09-28 through the App Store Connect API |
-| App Store Connect API key | 9258LNDGUM (Admin), on the Mac mini under the claude user | fastlane upload |
+| App Store Connect API key | 9258LNDGUM (Admin), on the Mac mini under the claude user | `make archive upload` in `app/` (cloud-managed distribution signing) |
+| App Store Connect app record | id 6817156133, name Brazier, SKU `brazier`, created by CJ 2026-09-29 | TestFlight; first build 0.1.0 (1) uploaded 2026-09-29 |
+| Development certificate | Xcode-managed, created on the Mac mini for the claude user 2026-09-29; key in `claude.keychain-db` | archive signing; distribution signing is cloud-managed at export |
 | APNs key | id `PTDYNZWJJJ`, Brazier's own, created 2026-09-29, valid for sandbox and production (Apple caps team-scoped keys at two; the first attempt `S422GAVQ85` came out sandbox-only and is unused; Honeywick's team key `4B7QX469NS` carried the relay for an hour and is no longer used here). The .p8 is at `/root/.config/brazier/` on mitochondria and beside the App Store Connect key on the Mac mini (claude user), mode 600 | relay var `APNS_KEY_ID`, secret `APNS_KEY`; production push proven through the relay 2026-09-29 |
 | Grafana JWT auth | header `X-JWT-Assertion`, JWKS = the Keystone app above, expect_claims iss + aud, lookup by email, auto sign-up off | `/opt/monitoring/docker-compose.yml`, grafana service, since 2026-09-28 |
 | Grafana contact point | `brazier`, webhook `https://brazier.gicloud.org/grafana`, HMAC secret `BRAZIER_WEBHOOK_SECRET` from `/opt/monitoring/.env` | `grafana/provisioning/alerting/contact-points.yml` |
