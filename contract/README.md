@@ -12,7 +12,8 @@ What it checks, in order: the public health and login page the address step read
 password card posts and the cookie it keeps; organizations and `X-Grafana-Org-Id`; a service-account
 token as Bearer; search, the dashboard JSON and `/api/ds/query` the tiles use; an alert rule firing into
 the instances list; the webhook's shape and its signature (HMAC on 11+, else Basic); a silence created,
-listed and expired; state history; `X-JWT-Assertion` through auth.jwt with a wrong issuer refused; and
+listed and expired; what a visitor may read when anonymous access is on (and what it may not); a star by
+uid; state history; `X-JWT-Assertion` through auth.jwt with a wrong issuer refused; and
 that a dashboard page renders signed in with a Bearer token or a JWT header. It also pins one negative
 fact the app is built around: `?auth_token=` (url_login) never sets a session cookie.
 

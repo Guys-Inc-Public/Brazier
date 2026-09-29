@@ -8,6 +8,9 @@ struct AlertsView: View {
     @State private var query = ""
     @State private var path = NavigationPath()
 
+    /// The silences screen, pushed from the row above the rack.
+    struct SilencesRoute: Hashable {}
+
     private enum Row: Identifiable {
         /// A folder heading: its key (organization and folder) and the words to show.
         case folder(String, String)
@@ -33,16 +36,25 @@ struct AlertsView: View {
                     ToolbarItem(placement: .topBarTrailing) { ServerMenu() }
                 }
                 .navigationDestination(for: GrafanaAlert.self) { AlertDetailView(alert: $0) }
+                .navigationDestination(for: SilencesRoute.self) { _ in SilencesView() }
                 .navigationDestination(item: selection == nil ? $model.pendingAlert : .constant(nil)) { AlertDetailView(alert: $0) }
                 .safeAreaInset(edge: .bottom, spacing: 0) { stampBar }
         }
         #if DEBUG
         .onChange(of: model.bay) { _, bay in
-            // Screenshot hook: BRAZIER_SHOT=silence opens the first firing alert (its silence sheet follows).
-            guard bay == .mounted, ProcessInfo.processInfo.environment["BRAZIER_SHOT"] == "silence",
-                  path.isEmpty, selection?.wrappedValue == nil,
-                  let first = model.alerts.filter({ $0.phase == .firing }).sorted(by: { $0.name < $1.name }).first else { return }
-            if let selection { selection.wrappedValue = first } else { path.append(first) }
+            // Screenshot hooks: BRAZIER_SHOT=silence opens the first firing alert (its silence sheet follows);
+            // BRAZIER_SHOT=silences opens the silences list.
+            guard bay == .mounted, path.isEmpty else { return }
+            switch ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? "" {
+            case "silence":
+                guard selection?.wrappedValue == nil,
+                      let first = model.alerts.filter({ $0.phase == .firing }).sorted(by: { $0.name < $1.name }).first else { return }
+                if let selection { selection.wrappedValue = first } else { path.append(first) }
+            case "silences":
+                path.append(SilencesRoute())
+            default:
+                break
+            }
         }
         #endif
     }
@@ -84,6 +96,11 @@ struct AlertsView: View {
                     .listRowSeparator(.hidden)
                     .listRowInsets(EdgeInsets(top: Brand.Space.inline, leading: Brand.Space.card, bottom: Brand.Space.inline, trailing: Brand.Space.card))
             }
+            if query.isEmpty {
+                NavigationLink(value: SilencesRoute()) { silencesRow }
+                    .listRowBackground(Brand.Tone.ink)
+                    .listRowSeparatorTint(Brand.Tone.line)
+            }
             if filtered.isEmpty {
                 emptyReading
                     .listRowBackground(Brand.Tone.ink)
@@ -102,12 +119,12 @@ struct AlertsView: View {
                                     .padding(.top, Brand.Space.inline)
                             case .alert(let alert):
                                 if let selection {
-                                    AlertRow(alert: alert, showOrg: model.showsOrgChips)
+                                    AlertRow(alert: alert, showOrg: model.showsOrgChips, silenced: silencedIDs.contains(alert.id))
                                         .tag(alert)
                                         .listRowBackground(selection.wrappedValue?.id == alert.id ? Brand.Tone.raise : Brand.Tone.ink)
                                         .listRowSeparatorTint(Brand.Tone.line)
                                 } else {
-                                    NavigationLink(value: alert) { AlertRow(alert: alert, showOrg: model.showsOrgChips) }
+                                    NavigationLink(value: alert) { AlertRow(alert: alert, showOrg: model.showsOrgChips, silenced: silencedIDs.contains(alert.id)) }
                                         .listRowBackground(Brand.Tone.ink)
                                         .listRowSeparatorTint(Brand.Tone.line)
                                 }
@@ -125,6 +142,32 @@ struct AlertsView: View {
                     }
                 }
             }
+    }
+
+    /// Silences on the mounted server, as one row: how many are active now, and the way to them.
+    private var silencesRow: some View {
+        let active = model.silences.filter(\.isActive).count
+        return HStack(spacing: Brand.Space.label) {
+            Image(systemName: "moon.zzz.fill")
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(active > 0 ? Brand.Tone.hot : Brand.Tone.muted)
+                .frame(width: 20)
+            Text("Silences").font(BrandFont.bodyStrong).foregroundStyle(Brand.Tone.paper)
+            Spacer()
+            Text(active == 0 ? "none active" : "\(active) active").font(BrandFont.meta).foregroundStyle(Brand.Tone.muted)
+        }
+        .frame(minHeight: Brand.hitTarget)
+    }
+
+    /// The instances an active silence covers, so their rows can say so.
+    private var silencedIDs: Set<String> {
+        let active = model.silences.filter(\.isActive)
+        guard !active.isEmpty else { return [] }
+        var ids = Set<String>()
+        for alert in model.alerts where active.contains(where: { $0.covers(alert) }) {
+            ids.insert(alert.id)
+        }
+        return ids
     }
 
     private var emptyReading: some View {

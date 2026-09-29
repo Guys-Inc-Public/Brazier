@@ -7,6 +7,8 @@ struct Server: Identifiable, Codable, Hashable {
     var name: String
     var url: URL
     var auth: AuthMode
+    /// The push relay for this Grafana, found from its signpost or typed; each Grafana may have its own.
+    var relay: URL?
 
     enum AuthMode: Codable, Hashable {
         /// Grafana's own sign-in page in a web view; the grafana_session cookie is kept in the keychain and rotated.
@@ -15,13 +17,16 @@ struct Server: Identifiable, Codable, Hashable {
         case token
         /// Sign in at the instance's identity provider; Grafana trusts the ID token (auth.jwt).
         case oidc(issuer: URL, clientID: String)
+        /// No sign-in at all: the Grafana lets anyone read it. Alerts and dashboards show; nothing is written and no push.
+        case anonymous
     }
 
-    init(id: UUID = UUID(), name: String, url: URL, auth: AuthMode) {
+    init(id: UUID = UUID(), name: String, url: URL, auth: AuthMode, relay: URL? = nil) {
         self.id = id
         self.name = name
         self.url = url
         self.auth = auth
+        self.relay = relay
     }
 
     var host: String { url.host ?? url.absoluteString }
@@ -38,6 +43,7 @@ struct Server: Identifiable, Codable, Hashable {
         case .session: return "SESSION"
         case .token: return "TOKEN"
         case .oidc: return "OIDC"
+        case .anonymous: return "GUEST"
         }
     }
 
@@ -46,7 +52,13 @@ struct Server: Identifiable, Codable, Hashable {
         case .session: return "Grafana's page"
         case .token: return "Service account token"
         case .oidc(let issuer, _): return "Single sign-on · \(issuer.host ?? "provider")"
+        case .anonymous: return "Without signing in"
         }
+    }
+
+    var isAnonymous: Bool {
+        if case .anonymous = auth { return true }
+        return false
     }
 
     var isOIDC: Bool {

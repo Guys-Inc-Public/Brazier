@@ -9,7 +9,7 @@ From mitochondria, `scripts/remote.sh` stages this directory on the Mac and runs
 ```
 scripts/remote.sh build-sim            # generate the project and build for the iPhone 17 Pro simulator
 scripts/remote.sh run-sim              # build, install, launch, screenshot to /Users/Shared/brazier/app-screenshot.png
-scripts/remote.sh run-sim SEED_URL=https://grafana.example.org SEED_TOKEN=glsa_… SEED_NAME=Lab   # DEBUG only: mount a token-mode server at launch
+scripts/remote.sh run-sim SEED_URL=https://grafana.example.org SEED_TOKEN=glsa_… SEED_NAME=Lab   # DEBUG only: mount a token-mode server at launch (SEED_USER/SEED_PASSWORD for a session one, SEED_ANONYMOUS=1 for a visitor)
 scripts/remote.sh archive              # Release archive with cloud signing (needs the App Store Connect app record)
 scripts/remote.sh upload               # export the archive to TestFlight
 ```
@@ -24,7 +24,7 @@ Simulators are per macOS user; the Makefile resolves `SIM_NAME` (default `iPhone
 - `Brazier/Brand` — the eleven colours, the two variable fonts, the interface parts (lamp, chip, latch, fault card, guarded throw).
 - `Brazier/Models` — servers, Grafana API models, the push payload.
 - `Brazier/Services` — keychain, OIDC with PKCE, credentials, the Grafana client, the relay client, push, silences.
-- `Brazier/Views` — alerts, servers, dashboards (milestone 3 stub), settings.
-- `Brazier/Resources` — asset catalog (icon, mark), fonts with their OFL licences.
+- `Brazier/Views` — the walkthrough, alerts and silences, servers (each with its relay), dashboards (tiles and the page), settings.
+- `Brazier/Resources` — asset catalog (icon, mark), fonts with their OFL licences, the privacy manifest (nothing collected; UserDefaults declared).
 
 Design: Guys Inc Branding Standards, instrument profile. Identifiers: `docs/reference/identifiers.md`.

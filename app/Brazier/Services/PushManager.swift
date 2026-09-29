@@ -25,11 +25,26 @@ final class PushManager {
 
     var deviceToken: String?
     var authorization: UNAuthorizationStatus = .notDetermined
-    var registration: Registration = .none
-    /// The Grafana login the relay filed this phone under, once it answered.
-    var registeredAs: String?
-    /// The last hand-over of what to send (Settings › Notifications) to the relay.
-    var preferences: Registration = .none
+    /// Per server: the state of this phone's registration with that server's relay. Nothing here is
+    /// optimistic; PASS only after the relay answered.
+    var registrations: [UUID: Registration] = [:]
+    /// Per server: the Grafana login the relay filed this phone under, once it answered.
+    var registeredAs: [UUID: String] = [:]
+    /// Per server: the last hand-over of what to send (Settings › Notifications) to its relay.
+    var preferences: [UUID: Registration] = [:]
+    /// APNs itself refused to hand out a token; shown wherever a registration would be.
+    var apnsFault: String?
+
+    func registration(for server: UUID?) -> Registration {
+        guard let server else { return .none }
+        if let fault = apnsFault { return .refuse("APNs: \(fault)") }
+        return registrations[server] ?? .none
+    }
+
+    func preferences(for server: UUID?) -> Registration {
+        guard let server else { return .none }
+        return preferences[server] ?? .none
+    }
 
     static func configureCategories() {
         let actions = Self.actions.map {

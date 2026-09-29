@@ -7,21 +7,12 @@ struct SettingsView: View {
     @Environment(AppModel.self) private var model
     /// On a wide screen a chosen page opens in the column beside this list; on a phone it pushes.
     var selection: Binding<SettingsPage?>?
-    @State private var relayText = ""
-    @State private var testing = false
-    @State private var path: [String] = []
-    @State private var relayHealth: RelayHealth?
-    @State private var relayFault: String?
+    @State private var path = NavigationPath()
 
     private var version: String {
         let short = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0"
         let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String ?? "0"
         return "\(short) (\(build))"
-    }
-
-    private var relayURL: URL? {
-        if case .url(let url) = ServerAddress.normalise(relayText) { return url }
-        return nil
     }
 
     var body: some View {
@@ -33,13 +24,20 @@ struct SettingsView: View {
             .navigationTitle("Settings")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { if selection == nil { ToolbarItem(placement: .principal) { HeaderMark() } } }
-            .navigationDestination(for: String.self) { _ in NotificationsView() }
+            .navigationDestination(for: String.self) { key in
+                if key == "servers" { ServersView() } else { NotificationsView() }
+            }
             .task {
-                relayText = model.store.relayURL?.absoluteString ?? ""
                 await model.push.refreshAuthorization()
                 #if DEBUG
-                if ["notifications", "settings-notifications"].contains(ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? ""), path.isEmpty {
-                    if let selection { selection.wrappedValue = .notifications } else { path = ["notifications"] }
+                // Screenshot hooks: BRAZIER_SHOT=notifications opens that screen; server-detail opens the mounted server.
+                let shot = ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? ""
+                if ["notifications", "settings-notifications"].contains(shot), path.isEmpty {
+                    if let selection { selection.wrappedValue = .notifications } else { path.append("notifications") }
+                } else if shot == "server-detail", path.isEmpty, let server = model.selectedServer {
+                    if let selection { selection.wrappedValue = .servers } else { path.append("servers") }
+                    try? await Task.sleep(for: .milliseconds(400))
+                    path.append(server)
                 }
                 #endif
             }
@@ -67,11 +65,11 @@ struct SettingsView: View {
         HStack(spacing: Brand.Space.label) {
             Text("Notifications").font(BrandFont.bodyStrong).foregroundStyle(Brand.Tone.paper)
             Spacer()
-            switch model.push.registration {
+            switch model.push.registration(for: model.selectedServerID) {
             case .pass: StateChip(word: "REGISTERED", signal: .ok)
             case .pending: StateChip(word: "PENDING", signal: .wait)
             case .refuse: StateChip(word: "REFUSE", signal: .stop)
-            case .none: StateChip(word: model.push.deviceToken == nil ? "OFF" : "NOT SENT", signal: .none)
+            case .none: StateChip(word: model.push.deviceToken == nil ? "OFF" : (model.selectedServer?.relay == nil ? "NO RELAY" : "NOT SENT"), signal: .none)
             }
         }
         .frame(minHeight: Brand.hitTarget)
@@ -88,7 +86,7 @@ struct SettingsView: View {
                             .listRowBackground(chosen(.servers))
                             .listRowSeparatorTint(Brand.Tone.line)
                     } else {
-                        NavigationLink { ServersView() } label: { serversRow }
+                        NavigationLink(value: "servers") { serversRow }
                             .listRowBackground(Brand.Tone.ink)
                             .listRowSeparatorTint(Brand.Tone.line)
                     }
@@ -105,10 +103,6 @@ struct SettingsView: View {
                             .listRowSeparatorTint(Brand.Tone.line)
                     }
                 } header: { Eyebrow("notifications").textCase(nil) }
-
-                Section {
-                    relayField
-                } header: { Eyebrow("push").textCase(nil) }
 
                 if !model.faults.isEmpty {
                     Section {
@@ -132,50 +126,6 @@ struct SettingsView: View {
                     Text("Fonts: Archivo and Martian Mono, SIL Open Font License 1.1.").font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
                         .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
                 } header: { Eyebrow("about").textCase(nil) }
-    }
-
-    /// The relay address, a test against its /health, and the one line of what a relay is.
-    private var relayField: some View {
-        VStack(alignment: .leading, spacing: Brand.Space.inline) {
-            Eyebrow("relay address")
-            HStack(spacing: Brand.Space.inline) {
-                TextField("https://relay.example.com", text: $relayText)
-                    .fieldChrome().keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    .onSubmit(saveRelay)
-                if testing {
-                    MeterBridge().frame(width: 60)
-                } else {
-                    Button("Test", action: testRelay).buttonStyle(MomentaryButtonStyle())
-                        .disabled(relayURL == nil).opacity(relayURL == nil ? 0.4 : 1)
-                }
-            }
-            if let relayHealth {
-                ReadingLine(signal: relayHealth.ok ? .ok : .wait, text: "Relay \(relayHealth.version ?? "") · \(relayHealth.ok ? "ok" : "not ok")\(relayHealth.apns == false ? " · push key not set yet" : "")")
-            } else if let relayFault {
-                ReadingLine(signal: .stop, text: relayFault)
-            }
-            Text("A small relay run by whoever runs your Grafana; it receives Grafana's webhook and hands each alert to Apple. Leave it empty and alerts still read whenever the app is open.")
-                .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
-        }
-        .padding(.vertical, Brand.Space.inline)
-        .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-    }
-
-    private func saveRelay() {
-        model.store.relayURL = relayURL
-        relayHealth = nil
-        relayFault = nil
-    }
-
-    private func testRelay() {
-        guard let url = relayURL else { return }
-        saveRelay()
-        testing = true
-        Task {
-            do { relayHealth = try await RelayClient(baseURL: url).health(); relayFault = nil }
-            catch { relayHealth = nil; relayFault = error.localizedDescription }
-            testing = false
-        }
     }
 
     private func row<Content: View>(_ label: String, @ViewBuilder content: () -> Content) -> some View {

@@ -28,15 +28,15 @@ Real push for firing and resolved alerts from your own Grafana, sign-in the way 
 
 Brazier is an iPhone app for people who run their own Grafana. It shows the alerts your Grafana is firing, lets you silence them from the phone, and opens your dashboards signed in. With a small relay that you or your Grafana admin run, it receives real push notifications for firing and resolved alerts.
 
-Sign in the way you already do. Type your Grafana's address and Brazier finds out how it signs in: a username and password, the identity provider your admin uses (passkeys included, through the system sign-in sheet), Grafana's own sign-in page, or a service account token. The credential stays in the phone's keychain and goes only to that Grafana.
+Sign in the way you already do. Type your Grafana's address and Brazier finds out how it signs in: a username and password, the identity provider your admin uses (passkeys included, through the system sign-in sheet), Grafana's own sign-in page, a service account token, or no sign-in at all where Grafana allows it. The credential stays in the phone's keychain and goes only to that Grafana.
 
 What it does
 
 • Alerts: every firing, pending and normal instance across your organizations, grouped by folder, with the summary and labels the rule wrote. Search by alert, label or host.
-• Silence from the phone: one, eight or twenty-four hours with a comment, written to Grafana as a silence you can see there.
+• Silence from the phone: one, eight or twenty-four hours with a comment, written to Grafana as a silence you can see there. Every silence listed, and ended early with one tap.
 • Push: firing and resolved alerts arrive as notifications with the alert's severity; a page interrupts, a warning does not. Silence from the lock screen. Choose which organizations, a minimum severity and quiet hours.
-• Dashboards: search, starred first, opened signed in.
-• Several Grafanas and several organizations, switched from the header.
+• Dashboards: search, starred first, star from the phone, opened signed in; stat and gauge panels as native tiles.
+• Several Grafanas and several organizations, switched from the header. A Grafana that lets visitors read it opens without signing in.
 
 What it needs
 

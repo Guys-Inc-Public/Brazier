@@ -57,7 +57,7 @@ struct DashboardsView: View {
     /// Reads again when the server, the sign-in or the organizations on the screen change; the
     /// organization list arrives a moment after the sign-in, so the key follows it.
     private var loadKey: String {
-        "\(model.selectedServerID?.uuidString ?? "")|\(model.signedIn)|\(model.selectedOrgs.map { String($0.orgId) }.joined(separator: ","))"
+        "\(model.selectedServerID?.uuidString ?? "")|\(model.signedIn)|\(model.selectedOrgs.map { String($0.orgId) }.joined(separator: ","))|\(model.dashboardsEdition)"
     }
 
     @ViewBuilder private var list: some View {

@@ -4,7 +4,7 @@ import UIKit
 @main
 struct BrazierApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
-    @State private var model = AppModel()
+    private var model: AppModel { AppDelegate.model }
 
     init() {
         Chrome.configure()
@@ -17,7 +17,6 @@ struct BrazierApp: App {
                 .preferredColorScheme(.dark)
                 .tint(Brand.Tone.hot)
                 .task {
-                    AppDelegate.model = model
                     await model.push.refreshAuthorization()
                     await model.refresh()
                 }

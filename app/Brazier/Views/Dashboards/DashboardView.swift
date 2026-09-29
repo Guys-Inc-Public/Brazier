@@ -8,6 +8,8 @@ struct DashboardView: View {
     @State private var document: DashboardDocument?
     @State private var mode: Mode = .tiles
     @State private var fault: String?
+    @State private var starred: Bool?
+    @State private var starring = false
 
     enum Mode: String, CaseIterable, Identifiable {
         case tiles, page
@@ -43,8 +45,31 @@ struct DashboardView: View {
         .background(Brand.Tone.ink)
         .navigationTitle(hit.title)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if model.selectedServer?.isAnonymous != true {
+                ToolbarItem(placement: .topBarTrailing) { starButton }
+            }
+        }
         .onChange(of: mode) { _, new in UserDefaults.standard.set(new.rawValue, forKey: "dashboardMode.\(hit.uid)") }
-        .task(id: hit.id) { await load() }
+        .task(id: hit.id) { starred = hit.isStarred; await load() }
+    }
+
+    /// Grafana's own star, for the signed-in user; starred dashboards lead the list.
+    private var starButton: some View {
+        Button {
+            guard !starring else { return }
+            let next = !(starred ?? false)
+            starring = true
+            Task {
+                if case .pass = await model.setStar(hit, on: next) { starred = next }
+                starring = false
+            }
+        } label: {
+            Image(systemName: (starred ?? false) ? "star.fill" : "star")
+                .foregroundStyle((starred ?? false) ? Brand.Tone.hot : Brand.Tone.muted)
+        }
+        .disabled(starring)
+        .accessibilityLabel((starred ?? false) ? "Unstar" : "Star")
     }
 
     private func load() async {
@@ -56,7 +81,7 @@ struct DashboardView: View {
             if let kept = UserDefaults.standard.string(forKey: "dashboardMode.\(hit.uid)"), let m = Mode(rawValue: kept) {
                 mode = m
             } else {
-                mode = doc.statPanels.isEmpty ? .page : .tiles
+                mode = doc.tilePanels.isEmpty ? .page : .tiles
             }
             #if DEBUG
             switch ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? "" {

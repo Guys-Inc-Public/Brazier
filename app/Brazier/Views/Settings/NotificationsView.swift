@@ -1,7 +1,7 @@
 import SwiftUI
 
-/// What this phone wants pushed, and the plumbing that gets it there. The choices go to the relay,
-/// which filters before Apple hears of an alert; they are kept here too, per server, for the screen.
+/// What this phone wants pushed, and the plumbing that gets it there. The choices go to the mounted
+/// server's relay, which filters before Apple hears of an alert; they are kept here too, per server.
 struct NotificationsView: View {
     @Environment(AppModel.self) private var model
     @State private var prefs = NotificationPrefs()
@@ -129,10 +129,12 @@ struct NotificationsView: View {
     private func syncLine(_ server: Server) -> some View {
         if model.push.deviceToken == nil {
             Interlock(reason: "Allow notifications below first; there is no device to file these under")
-        } else if model.store.relayURL == nil {
-            Interlock(reason: "Enter a relay address under Settings › Push to send these")
+        } else if server.relay == nil {
+            Interlock(reason: "Give \(server.name) a relay under Settings › Servers to send these")
+        } else if server.isAnonymous {
+            Interlock(reason: "\(server.name) is read without signing in; push needs a Grafana login to file this phone under")
         } else {
-            switch model.push.preferences {
+            switch model.push.preferences(for: server.id) {
             case .none: ReadingLine(signal: .none, text: "Not handed to the relay yet; they go with the next registration.")
             case .pending: ReadingLine(signal: .wait, text: "Handing these to the relay.")
             case .pass(let at): ReadingLine(signal: .ok, text: "The relay has these as of \(at.formatted(date: .omitted, time: .standard)).")
@@ -172,32 +174,41 @@ struct NotificationsView: View {
             }
         }
         row("Environment") { Text(PushManager.apnsEnvironment).font(BrandFont.code).foregroundStyle(Brand.Tone.paper) }
-        row("Registration") {
-            switch model.push.registration {
-            case .none: StateChip(word: "NOT SENT", signal: .none)
-            case .pending: StateChip(word: "PENDING", signal: .wait)
-            case .pass(let at): StateChip(word: "PASS \(at.formatted(date: .omitted, time: .standard))", signal: .ok)
-            case .refuse: StateChip(word: "REFUSE", signal: .stop)
+        if let server {
+            row("Relay") {
+                if let relay = server.relay {
+                    Text(relay.host ?? relay.absoluteString).font(BrandFont.code).foregroundStyle(Brand.Tone.paper).lineLimit(1)
+                } else {
+                    StateChip(word: "NONE", signal: .none)
+                }
             }
-        }
-        if let who = model.push.registeredAs {
-            row("Filed under") { Text(who).font(BrandFont.code).foregroundStyle(Brand.Tone.paper) }
-        }
-        if case .refuse(let why) = model.push.registration {
-            Text(why).font(BrandFont.small).foregroundStyle(Brand.Tone.paper)
-                .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
+            row("Registration") {
+                switch model.push.registration(for: server.id) {
+                case .none: StateChip(word: "NOT SENT", signal: .none)
+                case .pending: StateChip(word: "PENDING", signal: .wait)
+                case .pass(let at): StateChip(word: "PASS \(at.formatted(date: .omitted, time: .standard))", signal: .ok)
+                case .refuse: StateChip(word: "REFUSE", signal: .stop)
+                }
+            }
+            if let who = model.push.registeredAs[server.id] {
+                row("Filed under") { Text(who).font(BrandFont.code).foregroundStyle(Brand.Tone.paper) }
+            }
+            if case .refuse(let why) = model.push.registration(for: server.id) {
+                Text(why).font(BrandFont.small).foregroundStyle(Brand.Tone.paper)
+                    .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
+            }
         }
         if model.push.deviceToken == nil {
             Interlock(reason: "No device token yet; allow notifications first")
                 .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-        } else if model.store.relayURL == nil {
-            Interlock(reason: "Enter a relay address under Settings › Push to register this phone")
+        } else if let server, server.relay == nil {
+            Interlock(reason: "Give \(server.name) a relay under Settings › Servers to register this phone")
                 .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)
-        } else {
-            Button(registering ? "Registering…" : "Register this phone with the relay") {
+        } else if let server {
+            Button(registering ? "Registering…" : "Register this phone with \(server.relay?.host ?? "the relay")") {
                 guard !registering else { return }
                 registering = true
-                Task { await model.registerPush(); registering = false }
+                Task { await model.registerPush(for: server); registering = false }
             }
             .buttonStyle(ThrowButtonStyle(primary: false))
             .listRowBackground(Brand.Tone.ink).listRowSeparator(.hidden)

@@ -191,6 +191,35 @@ struct Silence: Decodable, Identifiable {
     }
 
     var endDate: Date? { GrafanaDates.parse(endsAt) }
+    var startDate: Date? { GrafanaDates.parse(startsAt) }
+    var isActive: Bool { status.state == "active" }
+
+    /// True when every matcher holds for the alert's labels, in the alert's own organization. Regex and
+    /// negative matchers are honoured the way Alertmanager reads them.
+    func covers(_ alert: GrafanaAlert) -> Bool {
+        guard orgId == nil || alert.orgId == nil || orgId == alert.orgId else { return false }
+        return matchers.allSatisfy { m in
+            let actual = alert.labels[m.name] ?? ""
+            let hit: Bool
+            if m.isRegex {
+                hit = actual.range(of: "^(?:\(m.value))$", options: .regularExpression) != nil
+            } else {
+                hit = actual == m.value
+            }
+            return m.isEqual ? hit : !hit
+        }
+    }
+
+    /// The rule the silence is for, when its matchers name one.
+    var alertName: String? { matchers.first { $0.name == "alertname" && $0.isEqual && !$0.isRegex }?.value }
+
+    /// The matchers as one line, `alertname` first: `alertname=Disk above 85 percent · host=ovh`.
+    var matcherLine: String {
+        matchers
+            .sorted { $0.name == "alertname" ? true : ($1.name == "alertname" ? false : $0.name < $1.name) }
+            .map { "\($0.name)\($0.isEqual ? "" : "!")\($0.isRegex ? "~" : "=")\($0.value)" }
+            .joined(separator: " · ")
+    }
 }
 
 struct NewSilence: Encodable {

@@ -15,6 +15,8 @@ docker run -d --rm --name "$NAME" -p 127.0.0.1::3000 \
   -v "$WORK/jwks.json:/etc/grafana/jwks.json:ro" \
   -e GF_SECURITY_ADMIN_PASSWORD="$PASSWORD" \
   -e GF_USERS_ALLOW_SIGN_UP=false \
+  -e GF_AUTH_ANONYMOUS_ENABLED=true \
+  -e GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer \
   -e GF_UNIFIED_ALERTING_MIN_INTERVAL=10s \
   -e GF_AUTH_JWT_ENABLED=true \
   -e GF_AUTH_JWT_HEADER_NAME=X-JWT-Assertion \

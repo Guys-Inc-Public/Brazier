@@ -63,19 +63,24 @@ final class AppModel {
     /// Development only: `simctl launch` with SIMCTL_CHILD_BRAZIER_SEED_URL / _TOKEN / _NAME mounts a
     /// token-mode server without touching the UI, so a headless build host can screenshot real readings.
     /// _USER and _PASSWORD instead of _TOKEN sign in through Grafana's JSON login endpoint for a session
-    /// server, the only kind that can belong to several organizations.
+    /// server, the only kind that can belong to several organizations. _ANONYMOUS=1 mounts a guest server;
+    /// _RELAY gives the seeded server a relay.
     private func seedFromEnvironment() {
-        let env = ProcessInfo.processInfo.environment
+        // A Makefile passes every variable, empty when unset: an empty value reads as absent.
+        let env = ProcessInfo.processInfo.environment.filter { !$0.value.isEmpty }
         guard let raw = env["BRAZIER_SEED_URL"], let url = URL(string: raw) else { return }
         let token = env["BRAZIER_SEED_TOKEN"]
         let password = env["BRAZIER_SEED_PASSWORD"]
-        guard token != nil || password != nil else { return }
-        let mode: Server.AuthMode = token != nil ? .token : .session
-        let server: Server
+        let anonymous = env["BRAZIER_SEED_ANONYMOUS"] == "1"
+        guard token != nil || password != nil || anonymous else { return }
+        let mode: Server.AuthMode = anonymous ? .anonymous : (token != nil ? .token : .session)
+        let relay = env["BRAZIER_SEED_RELAY"].flatMap(URL.init(string:))
+        var server: Server
         if let existing = store.servers.first(where: { $0.url == url && $0.auth == mode }) {
             server = existing
+            if let relay, server.relay != relay { server.relay = relay; store.update(server) }
         } else {
-            server = Server(name: env["BRAZIER_SEED_NAME"] ?? (url.host ?? "Seeded"), url: url, auth: mode)
+            server = Server(name: env["BRAZIER_SEED_NAME"] ?? (url.host ?? "Seeded"), url: url, auth: mode, relay: relay)
             store.add(server)
         }
         selectedServerID = server.id
@@ -83,7 +88,9 @@ final class AppModel {
         if let org = env["BRAZIER_SHOT_ORG"], Int(org) != nil {
             UserDefaults.standard.set(org, forKey: "orgSelection.\(server.id.uuidString)")
         }
-        if let token {
+        if anonymous {
+            Task { await refresh() }
+        } else if let token {
             do { try Keychain.set(token, for: SecretKey.apiToken(server.id)) }
             catch { record("keychain seed", error) }
         } else if let password, let user = env["BRAZIER_SEED_USER"] {
@@ -182,12 +189,15 @@ final class AppModel {
         }
         do {
             let client = client(for: server)
-            if accountName == nil, let user = try? await client.user() {
+            if server.isAnonymous {
+                accountName = "anonymous"
+            } else if accountName == nil, let user = try? await client.user() {
                 accountName = user.login
                 accountNames[server.id] = user.login
             }
-            // A Grafana that refuses the list (an old one, a gate in front) is read as one organization.
-            if orgCache[server.id] == nil, let list = try? await client.orgs() {
+            // A Grafana that refuses the list (an old one, a gate in front) is read as one organization;
+            // an anonymous reader has no list at all, only the organization Grafana gives guests.
+            if orgCache[server.id] == nil, !server.isAnonymous, let list = try? await client.orgs() {
                 orgCache[server.id] = list
             }
             orgs = orgCache[server.id] ?? []
@@ -214,7 +224,7 @@ final class AppModel {
             asOf = Date()
             bay = .mounted
         } catch let error as AuthError {
-            signedIn = false
+            if case .anonymousOff = error {} else { signedIn = false }
             alerts = []
             bay = .faulted(error.localizedDescription)
         } catch {
@@ -283,6 +293,9 @@ final class AppModel {
         await deregisterPush(using: server)
         store.remove(server)
         accountNames[server.id] = nil
+        push.registrations[server.id] = nil
+        push.registeredAs[server.id] = nil
+        push.preferences[server.id] = nil
         orgCache[server.id] = nil
         orgSelections[server.id] = nil
         UserDefaults.standard.removeObject(forKey: "orgSelection.\(server.id.uuidString)")
@@ -305,7 +318,10 @@ final class AppModel {
             result.healthWord = error.localizedDescription
             return result
         }
-        if await credentials.isSignedIn(server) {
+        if server.isAnonymous {
+            result.user = .none
+            result.userWord = "ANONYMOUS · NO ACCOUNT"
+        } else if await credentials.isSignedIn(server) {
             do {
                 let user = try await client.user()
                 result.user = .ok
@@ -342,8 +358,14 @@ final class AppModel {
         }
     }
 
-    /// The web view finished Grafana's own sign-in: keep the session and read again.
+    /// The web view finished Grafana's own sign-in: keep the session and read again. A server that was
+    /// read without signing in becomes a session server from here on.
     func completeSessionSignIn(_ server: Server, cookie: String, expiry: String?, user: GrafanaUser) async -> ThrowResult {
+        var server = server
+        if server.isAnonymous {
+            server.auth = .session
+            store.update(server)
+        }
         do {
             try await credentials.storeSession(cookie: cookie, expiry: expiry, for: server)
             accountNames[server.id] = user.login
@@ -360,6 +382,9 @@ final class AppModel {
         await deregisterPush(using: server)
         await credentials.forget(server)
         accountNames[server.id] = nil
+        push.registrations[server.id] = nil
+        push.registeredAs[server.id] = nil
+        push.preferences[server.id] = nil
         if selectedServerID == server.id {
             alerts = []
             silences = []
@@ -384,6 +409,7 @@ final class AppModel {
 
     func silence(alert: GrafanaAlert, duration: SilenceDuration, comment: String, on server: Server? = nil) async -> ThrowResult {
         guard let server = server ?? selectedServer else { return .refuse("No server mounted") }
+        if server.isAnonymous { return .refuse("Browsing without signing in; Grafana lets only a signed-in Editor silence.") }
         let body = SilenceBuilder.silence(labels: alert.labels, duration: duration, comment: comment)
         do {
             let created = try await client(for: server).createSilence(body, org: alert.orgId)
@@ -396,45 +422,97 @@ final class AppModel {
         }
     }
 
-    // MARK: Push
-
-    /// The server the relay files this phone under: the mounted one when it is signed in, else any signed-in one.
-    private func serverForPush() async -> Server? {
-        if let server = selectedServer, await credentials.isSignedIn(server) { return server }
-        for server in store.servers where await credentials.isSignedIn(server) { return server }
-        return nil
+    /// Ends a silence now, in its own organization on the mounted server.
+    func expire(_ silence: Silence) async -> ThrowResult {
+        guard let server = selectedServer else { return .refuse("No server mounted") }
+        if server.isAnonymous { return .refuse("Browsing without signing in; Grafana lets only a signed-in Editor end a silence.") }
+        do {
+            try await client(for: server).expireSilence(id: silence.id, org: silence.orgId)
+            await refresh()
+            return .pass("Silence \(silence.id.prefix(8)) ended")
+        } catch {
+            record("DELETE /api/alertmanager/grafana/api/v2/silence/\(silence.id.prefix(8))", error)
+            return .refuse(error.localizedDescription)
+        }
     }
 
+    // MARK: Dashboards
+
+    /// Bumped when something the dashboard list shows was changed from a dashboard (a star), so it reads again.
+    private(set) var dashboardsEdition = 0
+
+    func setStar(_ hit: SearchHit, on: Bool) async -> ThrowResult {
+        guard let server = selectedServer else { return .refuse("No server mounted") }
+        if server.isAnonymous { return .refuse("Stars belong to a signed-in user; this server is read without one.") }
+        do {
+            try await client(for: server).setStar(uid: hit.uid, on: on, org: hit.orgId)
+            dashboardsEdition += 1
+            return .pass(on ? "Starred \(hit.title)" : "Unstarred \(hit.title)")
+        } catch {
+            record("\(on ? "POST" : "DELETE") /api/user/stars/dashboard/uid/\(hit.uid)", error)
+            return .refuse(error.localizedDescription)
+        }
+    }
+
+    // MARK: Push
+
+    /// Every server with a relay gets this phone, under that server's own login. A server read without
+    /// signing in has no login for the relay to file the phone under, and says so.
     func registerPush() async {
-        guard let token = push.deviceToken, let relay = store.relayURL else { return }
-        guard let server = await serverForPush() else {
-            push.registration = .refuse("Sign in to a server first; the relay files this phone under your Grafana login")
+        guard push.deviceToken != nil else { return }
+        for server in store.servers where server.relay != nil {
+            await registerPush(for: server)
+        }
+    }
+
+    func registerPush(for server: Server) async {
+        guard let token = push.deviceToken, let relay = server.relay else { return }
+        if server.isAnonymous {
+            push.registrations[server.id] = .refuse("\(server.name) is read without signing in; the relay files a phone under a Grafana login, so sign in first")
             return
         }
-        push.registration = .pending
+        guard await credentials.isSignedIn(server) else {
+            push.registrations[server.id] = .refuse("Sign in to \(server.name) first; the relay files this phone under your Grafana login")
+            return
+        }
+        push.registrations[server.id] = .pending
         do {
             let credential = try await credentials.credential(for: server)
             let result = try await RelayClient(baseURL: relay)
                 .register(token: token, environment: PushManager.apnsEnvironment, name: UIDevice.current.name, server: server, credential: credential, prefs: notificationPrefs(for: server))
-            push.registeredAs = result.user
-            push.registration = .pass(Date())
-            push.preferences = .pass(Date())
+            push.registeredAs[server.id] = result.user
+            push.registrations[server.id] = .pass(Date())
+            push.preferences[server.id] = .pass(Date())
         } catch {
-            push.registration = .refuse(error.localizedDescription)
+            push.registrations[server.id] = .refuse(error.localizedDescription)
             record("POST \(relay.host ?? "relay")/devices", error)
         }
     }
 
     private func deregisterPush(using server: Server) async {
-        guard let token = push.deviceToken, let relay = store.relayURL,
+        guard let token = push.deviceToken, let relay = server.relay, !server.isAnonymous,
               let credential = try? await credentials.credential(for: server) else { return }
         do {
             try await RelayClient(baseURL: relay).deregister(token: token, server: server, credential: credential)
-            push.registration = .none
-            push.registeredAs = nil
+            push.registrations[server.id] = nil
+            push.registeredAs[server.id] = nil
+            push.preferences[server.id] = nil
         } catch {
             record("DELETE \(relay.host ?? "relay")/devices", error)
         }
+    }
+
+    /// Changes a server's relay: this phone leaves the old one and registers with the new.
+    func setRelay(_ relay: URL?, for server: Server) async {
+        guard server.relay != relay else { return }
+        if server.relay != nil { await deregisterPush(using: server) }
+        var updated = server
+        updated.relay = relay
+        store.update(updated)
+        push.registrations[server.id] = nil
+        push.registeredAs[server.id] = nil
+        push.preferences[server.id] = nil
+        if relay != nil { await registerPush(for: updated) }
     }
 
     func handlePush(_ payload: BrazierPush, action: String?) async {
@@ -477,18 +555,22 @@ final class AppModel {
     }
 
     func syncPreferences(for server: Server) async {
-        guard let token = push.deviceToken, let relay = store.relayURL else { return }
-        guard await credentials.isSignedIn(server) else {
-            push.preferences = .refuse("Sign in to \(server.name) first")
+        guard let token = push.deviceToken, let relay = server.relay else { return }
+        if server.isAnonymous {
+            push.preferences[server.id] = .refuse("\(server.name) is read without signing in; there is no login to file these under")
             return
         }
-        push.preferences = .pending
+        guard await credentials.isSignedIn(server) else {
+            push.preferences[server.id] = .refuse("Sign in to \(server.name) first")
+            return
+        }
+        push.preferences[server.id] = .pending
         do {
             let credential = try await credentials.credential(for: server)
             _ = try await RelayClient(baseURL: relay).setPreferences(token: token, prefs: notificationPrefs(for: server), server: server, credential: credential)
-            push.preferences = .pass(Date())
+            push.preferences[server.id] = .pass(Date())
         } catch {
-            push.preferences = .refuse(error.localizedDescription)
+            push.preferences[server.id] = .refuse(error.localizedDescription)
             record("PUT \(relay.host ?? "relay")/devices/…/preferences", error)
         }
     }

@@ -10,10 +10,21 @@ SIM_NAME  ?= iPhone 17 Pro
 SIM_UDID  ?= $(shell xcrun simctl list devices available -j | python3 -c 'import sys,json; d=json.load(sys.stdin)["devices"]; c=[(rt,dev["udid"]) for rt,devs in d.items() if "iOS" in rt for dev in devs if dev["name"]=="$(SIM_NAME)"]; print(sorted(c)[-1][1] if c else "")')
 BUNDLE_ID := org.guysinc.brazier
 SHOT      ?= /Users/Shared/brazier/app-screenshot.png
-# Optional, DEBUG builds only: mount a token-mode server at launch (see AppModel.seedFromEnvironment).
+# Optional, DEBUG builds only: mount a server at launch (see AppModel.seedFromEnvironment): a token, a
+# username and password, or SEED_ANONYMOUS=1 for a Grafana that lets visitors read. SHOT_MODE is the
+# BRAZIER_SHOT screen hook (notifications|dashboards|dashboard|tiles|silence|silences, or a walkthrough step).
 SEED_URL  ?=
 SEED_TOKEN ?=
 SEED_NAME ?=
+SEED_USER ?=
+SEED_PASSWORD ?=
+SEED_ANONYMOUS ?=
+SEED_RELAY ?=
+SHOT_MODE ?=
+SHOT_ORG ?=
+SHOT_DASHBOARD ?=
+SHOT_URL ?=
+SHOT_WAIT ?= 6
 
 # App Store Connect API key (Admin), under the claude user. Cloud signing, no .p12 on the Mac.
 ASC_KEY_PATH := /Users/claude/.appstoreconnect/private_keys/AuthKey_9258LNDGUM.p8
@@ -27,7 +38,7 @@ ASC_AUTH     := -allowProvisioningUpdates -authenticationKeyPath $(ASC_KEY_PATH)
 KEYCHAIN    := /Users/claude/Library/Keychains/claude.keychain-db
 KEYCHAIN_PW  = $(shell cat /Users/claude/.config/login.pw)
 
-.PHONY: generate build-sim run-sim unlock grant-keys archive upload clean
+.PHONY: generate build-sim run-sim launch-sim print-udid unlock grant-keys archive upload clean
 
 unlock:
 	@security unlock-keychain -p "$(KEYCHAIN_PW)" $(KEYCHAIN)
@@ -35,6 +46,9 @@ unlock:
 
 grant-keys:
 	@security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$(KEYCHAIN_PW)" $(KEYCHAIN) >/dev/null 2>&1 || true
+
+print-udid:
+	@echo $(SIM_UDID)
 
 generate:
 	xcodegen generate --spec project.yml --quiet
@@ -45,13 +59,19 @@ build-sim: generate
 	  -destination "platform=iOS Simulator,id=$(SIM_UDID)" \
 	  -derivedDataPath $(DERIVED) CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO build | xcbeautify
 
-run-sim: build-sim
+run-sim: build-sim launch-sim
+
+# Install the last simulator build, launch it with the seed and hook variables, screenshot after SHOT_WAIT s.
+launch-sim:
 	xcrun simctl boot $(SIM_UDID) 2>/dev/null || true
 	xcrun simctl bootstatus $(SIM_UDID) -b
 	xcrun simctl terminate $(SIM_UDID) $(BUNDLE_ID) 2>/dev/null || true
 	xcrun simctl install $(SIM_UDID) "$(DERIVED)/Build/Products/Debug-iphonesimulator/Brazier.app"
-	SIMCTL_CHILD_BRAZIER_SEED_URL="$(SEED_URL)" SIMCTL_CHILD_BRAZIER_SEED_TOKEN="$(SEED_TOKEN)" SIMCTL_CHILD_BRAZIER_SEED_NAME="$(SEED_NAME)" xcrun simctl launch $(SIM_UDID) $(BUNDLE_ID)
-	sleep 5
+	SIMCTL_CHILD_BRAZIER_SEED_URL="$(SEED_URL)" SIMCTL_CHILD_BRAZIER_SEED_TOKEN="$(SEED_TOKEN)" SIMCTL_CHILD_BRAZIER_SEED_NAME="$(SEED_NAME)" \
+	SIMCTL_CHILD_BRAZIER_SEED_USER="$(SEED_USER)" SIMCTL_CHILD_BRAZIER_SEED_PASSWORD="$(SEED_PASSWORD)" SIMCTL_CHILD_BRAZIER_SEED_ANONYMOUS="$(SEED_ANONYMOUS)" SIMCTL_CHILD_BRAZIER_SEED_RELAY="$(SEED_RELAY)" \
+	SIMCTL_CHILD_BRAZIER_SHOT="$(SHOT_MODE)" SIMCTL_CHILD_BRAZIER_SHOT_ORG="$(SHOT_ORG)" SIMCTL_CHILD_BRAZIER_SHOT_DASHBOARD="$(SHOT_DASHBOARD)" SIMCTL_CHILD_BRAZIER_SHOT_URL="$(SHOT_URL)" \
+	xcrun simctl launch $(SIM_UDID) $(BUNDLE_ID)
+	sleep $(SHOT_WAIT)
 	xcrun simctl io $(SIM_UDID) screenshot "$(SHOT)"
 	@echo "screenshot: $(SHOT)"
 

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A dashboard's stat panels as native tiles: a grid of readings, each in the colour its thresholds
+/// A dashboard's stat, gauge and bar gauge panels as native tiles: a grid of readings, each in the colour its thresholds
 /// give it. Reads every panel at once, again on pull and every minute while on the screen.
 struct TilesView: View {
     @Environment(AppModel.self) private var model
@@ -17,8 +17,8 @@ struct TilesView: View {
 
     var body: some View {
         Group {
-            if document.statPanels.isEmpty {
-                BlankBay(title: "No stat panels", text: "Tiles come from a dashboard's stat panels; this one has none. The page shows everything.")
+            if document.tilePanels.isEmpty {
+                BlankBay(title: "No tile panels", text: "Tiles come from a dashboard's stat, gauge and bar gauge panels; this one has none. The page shows everything.")
             } else if readings.isEmpty && reading {
                 WarmingBay(name: document.title)
             } else {
@@ -46,7 +46,7 @@ struct TilesView: View {
                 HStack {
                     AsOfStamp(asOf: asOf, failedAt: nil)
                     Spacer()
-                    Eyebrow("\(document.statPanels.count) panels · last 6 h")
+                    Eyebrow("\(document.tilePanels.count) panels · last 6 h")
                 }
                 .padding(.horizontal, Brand.Space.card).padding(.vertical, Brand.Space.inline)
             }
@@ -112,7 +112,7 @@ struct TilesView: View {
         reading = true
         defer { reading = false }
         let client = model.client(for: server)
-        let panels = Array(document.statPanels.prefix(TileReader.maxPanels))
+        let panels = Array(document.tilePanels.prefix(TileReader.maxPanels))
         let results = await withTaskGroup(of: (Int, TileReading).self) { group in
             for (i, panel) in panels.enumerated() {
                 group.addTask {

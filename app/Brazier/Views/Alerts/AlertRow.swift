@@ -4,6 +4,8 @@ struct AlertRow: View {
     let alert: GrafanaAlert
     /// Say which organization the row came from; only when more than one is on the screen.
     var showOrg = false
+    /// An active silence covers this instance: Grafana is not notifying for it.
+    var silenced = false
 
     private var metaLine: String {
         var parts: [String] = []
@@ -28,6 +30,12 @@ struct AlertRow: View {
                 }
             }
             Spacer(minLength: 0)
+            if silenced {
+                Image(systemName: "moon.zzz.fill")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Brand.Tone.muted)
+                    .accessibilityLabel("Silenced")
+            }
             if let severity = alert.labels["severity"] {
                 StateChip(word: severity, signal: severity == "page" ? .stop : .wait)
             }

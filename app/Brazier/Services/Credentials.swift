@@ -7,18 +7,21 @@ enum Credential {
     /// A complete Cookie header value for the Grafana's host (`grafana_session=…; other=…`): Grafana's
     /// own session, and beside it whatever an auth proxy in front of Grafana set.
     case cookie(String)
+    /// Nothing: the Grafana lets anyone read it (anonymous access on).
+    case none
 
-    var header: (name: String, value: String) {
+    var header: (name: String, value: String)? {
         switch self {
         case .jwt(let token): return ("X-JWT-Assertion", token)
         case .bearer(let token): return ("Authorization", "Bearer \(token)")
         case .cookie(let value): return ("Cookie", value)
+        case .none: return nil
         }
     }
 
     func apply(to request: inout URLRequest) {
-        let (name, value) = header
-        request.setValue(value, forHTTPHeaderField: name)
+        guard let header else { return }
+        request.setValue(header.value, forHTTPHeaderField: header.name)
     }
 }
 
@@ -28,6 +31,8 @@ enum AuthError: LocalizedError {
     case noIDToken
     /// Grafana turned a sign-in down, with the reason in plain words.
     case refused(String)
+    /// A Grafana read without signing in now wants a sign-in: its anonymous access was turned off.
+    case anonymousOff
 
     var errorDescription: String? {
         switch self {
@@ -35,6 +40,7 @@ enum AuthError: LocalizedError {
         case .sessionEnded: return "Signed out"
         case .noIDToken: return "The provider issued no ID token"
         case .refused(let why): return why
+        case .anonymousOff: return "Anonymous access is off"
         }
     }
 }
@@ -50,6 +56,8 @@ actor CredentialProvider {
         case .token:
             guard let token = Keychain.get(SecretKey.apiToken(server.id)) else { throw AuthError.signedOut }
             return .bearer(token)
+        case .anonymous:
+            return .none
         case .oidc(let issuer, let clientID):
             if !forceRefresh,
                let idToken = Keychain.get(SecretKey.idToken(server.id)),
@@ -127,6 +135,7 @@ actor CredentialProvider {
         case .session: return Keychain.get(SecretKey.sessionCookie(server.id)) != nil
         case .token: return Keychain.get(SecretKey.apiToken(server.id)) != nil
         case .oidc: return Keychain.get(SecretKey.refreshToken(server.id)) != nil
+        case .anonymous: return true
         }
     }
 

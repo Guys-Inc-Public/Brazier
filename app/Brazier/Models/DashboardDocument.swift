@@ -1,6 +1,6 @@
 import Foundation
 
-/// The parts of a dashboard's JSON the tiles read: its stat panels, their queries, units, thresholds
+/// The parts of a dashboard's JSON the tiles read: its stat, gauge and bar gauge panels, their queries, units, thresholds
 /// and value mappings. Rows are flattened; everything else in the document is left where it is.
 struct DashboardResponse: Decodable {
     let dashboard: DashboardDocument
@@ -21,9 +21,11 @@ struct DashboardDocument: Decodable {
         panels = raw.flatMap { $0.type == "row" ? ($0.panels ?? []) : [$0] }
     }
 
-    /// The panels the tiles can render, in the dashboard's own order.
-    var statPanels: [Panel] {
-        panels.filter { $0.type == "stat" }.sorted { ($0.gridPos?.y ?? 0, $0.gridPos?.x ?? 0) < ($1.gridPos?.y ?? 0, $1.gridPos?.x ?? 0) }
+    /// The panels the tiles can render, in the dashboard's own order: stat, gauge and bar gauge all
+    /// reduce their series to one number each with the same unit, threshold and mapping settings.
+    static let tileTypes: Set<String> = ["stat", "gauge", "bargauge"]
+    var tilePanels: [Panel] {
+        panels.filter { Self.tileTypes.contains($0.type) }.sorted { ($0.gridPos?.y ?? 0, $0.gridPos?.x ?? 0) < ($1.gridPos?.y ?? 0, $1.gridPos?.x ?? 0) }
     }
 }
 

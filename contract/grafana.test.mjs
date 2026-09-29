@@ -268,6 +268,48 @@ test("a silence is created for the instance, listed active, then expired", async
   assert.equal(gone.status, 200);
 });
 
+// ---- anonymous access: browse without signing in -------------------------------------------------------
+
+test("with anonymous access on, alerts, search, a dashboard and its query read with no credential; /api/user, orgs and a silence do not", async () => {
+  // The app's "Browse without signing in" card: the login page says anonymousEnabled, the reads work
+  // without a credential, and everything that needs a person answers 401 (or 403 for a Viewer).
+  const page = await api("GET", "/login?disableAutoLogin=true", { auth: null, headers: { Accept: "text/html" } });
+  assert.match(page.text, /"anonymousEnabled":true/);
+  const alerts = await api("GET", "/api/prometheus/grafana/api/v1/alerts", { auth: null });
+  assert.equal(alerts.status, 200, alerts.text);
+  assert.ok(Array.isArray(alerts.json.data.alerts));
+  const search = await api("GET", "/api/search?type=dash-db&limit=200", { auth: null });
+  assert.equal(search.status, 200);
+  assert.ok(search.json.some((h) => h.uid === state.dashboard.uid));
+  const dash = await api("GET", `/api/dashboards/uid/${state.dashboard.uid}`, { auth: null });
+  assert.equal(dash.status, 200);
+  const panel = dash.json.dashboard.panels[0];
+  const query = await api("POST", "/api/ds/query", { auth: null, body: { from: "now-6h", to: "now", queries: panel.targets.map((t) => ({ ...t, datasource: { type: state.ds.type, uid: state.ds.uid }, intervalMs: 60000, maxDataPoints: 100 })) } });
+  assert.equal(query.status, 200, query.text);
+  const silences = await api("GET", "/api/alertmanager/grafana/api/v2/silences", { auth: null });
+  assert.equal(silences.status, 200);
+  const me = await api("GET", "/api/user", { auth: null });
+  assert.equal(me.status, 401);
+  const orgs = await api("GET", "/api/user/orgs", { auth: null });
+  assert.equal(orgs.status, 401);
+  const write = await api("POST", "/api/alertmanager/grafana/api/v2/silences", { auth: null, body: { matchers: [{ name: "alertname", value: "x", isRegex: false, isEqual: true }], startsAt: new Date().toISOString(), endsAt: new Date(Date.now() + 60000).toISOString(), createdBy: "anon", comment: "no" } });
+  assert.ok([401, 403].includes(write.status), write.text);
+});
+
+// ---- stars ---------------------------------------------------------------------------------------------------
+
+test("a dashboard is starred by uid, the search says so, and unstarred again", async () => {
+  await api("DELETE", `/api/user/stars/dashboard/uid/${state.dashboard.uid}`); // the provisioning check may have starred it
+  const on = await api("POST", `/api/user/stars/dashboard/uid/${state.dashboard.uid}`);
+  assert.equal(on.status, 200, on.text);
+  const starred = await api("GET", "/api/search?type=dash-db&starred=true");
+  assert.ok(starred.json.some((h) => h.uid === state.dashboard.uid && h.isStarred === true), starred.text);
+  const off = await api("DELETE", `/api/user/stars/dashboard/uid/${state.dashboard.uid}`);
+  assert.equal(off.status, 200, off.text);
+  const plain = await api("GET", "/api/search?type=dash-db");
+  assert.equal(plain.json.find((h) => h.uid === state.dashboard.uid)?.isStarred, false);
+});
+
 test("GET /api/annotations?type=alert reads state history", async () => {
   const r = await api("GET", "/api/annotations?type=alert&limit=50");
   assert.equal(r.status, 200);

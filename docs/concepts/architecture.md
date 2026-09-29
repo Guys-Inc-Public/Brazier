@@ -15,7 +15,7 @@ The app on the phone signs in on Grafana's own login page (Keystone behind it, f
 
 | Part | Where | Job |
 |---|---|---|
-| The app | iPhone, SwiftUI, iOS 17+ | Servers, alerts, silences, dashboards in a web view, push registration |
+| The app | iPhone and iPad, SwiftUI, iOS 17+ | Servers (each with its relay), alerts, silences written and ended, dashboards as tiles or the page, push registration |
 | Push relay | Cloudflare Worker, KV | Receives Grafana's webhook, routes by site label, pushes through APNs, keeps the device registry |
 | Keystone | OVH, keystone.gicloud.org | The estate's single sign-on behind Grafana's login page; optional OIDC client for the advanced path |
 | Grafana | mitochondria, 13.2.1 | Login page, alerting API, silences, search, dashboards; a webhook contact point; JWT auth for the advanced path |

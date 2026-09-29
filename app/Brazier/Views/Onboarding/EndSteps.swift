@@ -51,12 +51,14 @@ struct DoneStep: View {
         case .oidc: return "\(draft.providerName ?? "Provider") single sign-on"
         case .session: return "Grafana's page"
         case .token: return "Service account token"
+        case .anonymous: return "Without signing in"
         case nil: return ""
         }
     }
 
     private var pushLine: String {
-        guard draft.relayURL != nil else { return "not set up; add a relay under Settings" }
+        guard draft.relayURL != nil else { return "not set up; add a relay under Settings › Servers" }
+        if draft.method == .anonymous { return "relay set; sign in to get pushes" }
         switch draft.notificationsGranted {
         case true: return "relay set, notifications allowed"
         case false: return "relay set, notifications refused; allow them in iOS Settings"
@@ -69,7 +71,7 @@ struct DoneStep: View {
             KeyValueRows(rows: [
                 ("Server", draft.url?.absoluteString ?? draft.name),
                 ("Sign-in", signInLine),
-                ("As", draft.user?.login ?? ""),
+                ("As", draft.user?.login ?? (draft.method == .anonymous ? "anonymous" : "")),
                 ("Push", pushLine),
             ])
             Text("Add more servers any time under Settings › Servers.")

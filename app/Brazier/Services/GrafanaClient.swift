@@ -65,6 +65,16 @@ struct GrafanaClient {
         try await post("api/alertmanager/grafana/api/v2/silences", body: silence, org: org)
     }
 
+    /// Ends a silence now. Grafana keeps it in the list as expired.
+    func expireSilence(id: String, org: Int? = nil) async throws {
+        _ = try await send("DELETE", "api/alertmanager/grafana/api/v2/silence/\(id)", query: [], body: nil, authenticated: true, org: org)
+    }
+
+    /// Stars or unstars a dashboard for the signed-in user; the search then says `isStarred`.
+    func setStar(uid: String, on: Bool, org: Int? = nil) async throws {
+        _ = try await send(on ? "POST" : "DELETE", "api/user/stars/dashboard/uid/\(uid)", query: [], body: nil, authenticated: true, org: org)
+    }
+
     /// A dashboard's JSON, for the tiles: its stat panels, their queries, units and thresholds.
     func dashboardJSON(uid: String, org: Int? = nil) async throws -> DashboardDocument {
         let response: DashboardResponse = try await get("api/dashboards/uid/\(uid)", org: org)
@@ -121,6 +131,7 @@ struct GrafanaClient {
             throw AuthError.sessionEnded
         }
         if status == 401, authenticated {
+            if server.isAnonymous { throw AuthError.anonymousOff }
             if server.isSession {
                 await credentials.endSession(server)
                 throw AuthError.sessionEnded

@@ -59,7 +59,7 @@ struct RootView: View {
             // Screenshot hook: with a seeded server, BRAZIER_SHOT=dashboards|notifications opens that section.
             switch ProcessInfo.processInfo.environment["BRAZIER_SHOT"] ?? "" {
             case "dashboards", "dashboard", "tiles": tab = .dashboards
-            case "notifications", "settings-notifications": tab = .settings
+            case "notifications", "settings-notifications", "server-detail": tab = .settings
             default: break
             }
         }

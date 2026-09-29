@@ -1,19 +1,15 @@
 import Foundation
 import Observation
 
-/// The list of servers and the relay URL. Plain state in UserDefaults; secrets in the keychain.
+/// The list of servers. Plain state in UserDefaults; secrets in the keychain. Each server carries its
+/// own relay address; builds before 7 kept one address for the whole app, carried over on first load.
 @MainActor
 @Observable
 final class ServerStore {
     private(set) var servers: [Server] = []
 
-    /// The push relay, if the person has one. Nothing is preset: without it there is no push.
-    var relayURL: URL? {
-        didSet {
-            if let relayURL { defaults.set(relayURL.absoluteString, forKey: Keys.relay) }
-            else { defaults.removeObject(forKey: Keys.relay) }
-        }
-    }
+    /// True when any server has a relay: the only way a push can reach this phone.
+    var hasRelay: Bool { servers.contains { $0.relay != nil } }
 
     private let defaults = UserDefaults.standard
     private enum Keys {
@@ -33,7 +29,11 @@ final class ServerStore {
            let list = try? JSONDecoder().decode([Server].self, from: data) {
             servers = list
         }
-        relayURL = defaults.string(forKey: Keys.relay).flatMap(URL.init(string:))
+        if let legacy = defaults.string(forKey: Keys.relay).flatMap(URL.init(string:)) {
+            for i in servers.indices where servers[i].relay == nil { servers[i].relay = legacy }
+            defaults.removeObject(forKey: Keys.relay)
+            save()
+        }
     }
 
     func add(_ server: Server) {

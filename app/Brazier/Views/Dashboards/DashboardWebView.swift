@@ -61,7 +61,13 @@ struct DashboardWebView: View {
             case .bearer, .jwt:
                 var signed = request
                 credential.apply(to: &signed)
-                page = Page(request: signed, script: Self.headerScript(credential.header, origin: server.origin))
+                if let header = credential.header {
+                    page = Page(request: signed, script: Self.headerScript(header, origin: server.origin))
+                } else {
+                    page = Page(request: signed)
+                }
+            case .none:
+                page = Page(request: request)
             }
         } catch {
             fault = error.localizedDescription

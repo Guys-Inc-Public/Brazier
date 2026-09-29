@@ -40,14 +40,22 @@ struct FaultedBay: View {
     @State private var signingIn = false
     @State private var showWeb = false
 
-    private var notSignedIn: Bool { reason == "Not signed in" || reason == "Signed out" }
+    private var notSignedIn: Bool { reason == "Not signed in" || reason == "Signed out" || reason == "Anonymous access is off" }
+
+    private var explanation: String {
+        switch reason {
+        case "Signed out": return "Grafana ended the session. Sign in again to keep reading."
+        case "Anonymous access is off": return "This Grafana no longer lets visitors read it. Sign in to keep reading."
+        default: return reason
+        }
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: Brand.Space.card) {
             VStack(alignment: .leading, spacing: Brand.Space.label) {
                 Eyebrow("faulted", tone: Brand.Tone.stop)
                 Text(model.selectedServer?.name ?? "Server").font(BrandFont.title).foregroundStyle(Brand.Tone.paper)
-                Text(reason == "Signed out" ? "Grafana ended the session. Sign in again to keep reading." : reason)
+                Text(explanation)
                     .font(BrandFont.body).foregroundStyle(Brand.Tone.paper)
             }
             if let latch {
@@ -58,8 +66,8 @@ struct FaultedBay: View {
                     HStack(spacing: Brand.Space.label) { MeterBridge(); Eyebrow("signing in") }
                 } else {
                     switch server.auth {
-                    case .session:
-                        Button("Sign in again") { showWeb = true }
+                    case .session, .anonymous:
+                        Button(server.isAnonymous ? "Sign in on \(server.name)'s page" : "Sign in again") { showWeb = true }
                             .buttonStyle(ThrowButtonStyle())
                             .fullScreenCover(isPresented: $showWeb) {
                                 GrafanaLoginSheet(server: server.url) { cookie, expiry, user in

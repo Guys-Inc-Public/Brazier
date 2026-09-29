@@ -2,13 +2,14 @@ import SwiftUI
 import Observation
 
 enum SetupMethod: Equatable {
-    case session, token, oidc
+    case session, token, oidc, anonymous
 
     var word: String {
         switch self {
         case .session: return "SESSION"
         case .token: return "TOKEN"
         case .oidc: return "OIDC"
+        case .anonymous: return "GUEST"
         }
     }
 }
@@ -86,9 +87,13 @@ final class SetupDraft {
         case .oidc:
             guard let oidcIssuer else { return nil }
             return .oidc(issuer: oidcIssuer, clientID: oidcClientID)
+        case .anonymous: return .anonymous
         case nil: return nil
         }
     }
+
+    /// A way in was verified: a person, or the Grafana's open door.
+    var hasWayIn: Bool { user != nil || method == .anonymous }
 
     /// The address changed: whatever was verified against the old one no longer counts.
     func resetVerification() {
@@ -205,7 +210,7 @@ struct OnboardingFlow: View {
 
     private func save() async {
         guard let url = draft.url, let method = draft.method, let auth = draft.authMode else { return }
-        let server = Server(name: draft.name, url: url, auth: auth)
+        let server = Server(name: draft.name, url: url, auth: auth, relay: draft.relayURL)
         let login = draft.user?.login
         switch method {
         case .session:
@@ -214,8 +219,9 @@ struct OnboardingFlow: View {
             await model.add(server, apiToken: draft.apiToken, login: login)
         case .oidc:
             await model.add(server, tokens: draft.oidcTokens, login: login)
+        case .anonymous:
+            await model.add(server)
         }
-        if let relay = draft.relayURL { model.store.relayURL = relay }
         draft.savedServer = server
         model.select(server)
         await model.push.refreshAuthorization()

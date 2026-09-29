@@ -26,6 +26,8 @@ struct SignInStep: View {
 
     private var shape: ServerProbe.SignInShape? { draft.currentShape }
     private var fronted: Bool { draft.health?.isFronted == true || shape?.fronted == true }
+    /// The page said anyone may read this Grafana: offer the open door right after the recommended way in.
+    private var offerGuest: Bool { shape?.anonymous == true && !fronted }
     private var passwordForm: Bool? { shape?.passwordForm }
     /// Hidden only when the page said the form is off; unknown still shows it, folded.
     private var offerPassword: Bool { passwordForm != false }
@@ -45,11 +47,13 @@ struct SignInStep: View {
             if let latch { LatchView(result: latch) { self.latch = nil } }
             if let user = draft.user {
                 signedInPlate(user)
+            } else if draft.method == .anonymous {
+                guestPlate
             } else {
                 cards
             }
         } footer: {
-            StepButtons(back: back, primary: "Continue", blocker: draft.user == nil ? "Sign in to continue" : nil, busy: busy, action: next)
+            StepButtons(back: back, primary: "Continue", blocker: draft.hasWayIn ? nil : "Sign in to continue", busy: busy, action: next)
         }
         #if DEBUG
         .onAppear { if draft.debugOpenWeb { draft.debugOpenWeb = false; showWeb = true } }
@@ -73,19 +77,55 @@ struct SignInStep: View {
             switch lead {
             case .provider:
                 if let signIn = draft.published { providerCard(signIn) }
+                if offerGuest { guestCard }
                 if offerPassword { passwordCard(leads: false) }
                 pageCard(leads: false)
                 tokenCard
             case .password:
                 passwordCard(leads: true)
+                if offerGuest { guestCard }
                 pageCard(leads: false)
                 tokenCard
             case .page:
                 pageCard(leads: true)
+                if offerGuest { guestCard }
                 if offerPassword { passwordCard(leads: false) }
                 tokenCard
             }
         }
+    }
+
+    /// The Grafana lets anyone read it: alerts and dashboards without a person behind them.
+    private var guestCard: some View {
+        MethodCard(title: "Browse without signing in",
+                   text: "This Grafana lets anyone read it. Alerts and dashboards show as they would to a visitor; silencing, stars and push need a signed-in account, which you can add later under Settings › Servers.") {
+            Button("Continue as a visitor") {
+                draft.resetVerification()
+                draft.method = .anonymous
+                latch = nil
+            }
+            .buttonStyle(ThrowButtonStyle(primary: false))
+        }
+    }
+
+    private var guestPlate: some View {
+        VStack(alignment: .leading, spacing: Brand.Space.label) {
+            HStack(spacing: Brand.Space.inline) {
+                Lamp(signal: .ok)
+                Text("Browsing without signing in").font(BrandFont.bodyStrong).foregroundStyle(Brand.Tone.paper)
+                Spacer()
+                StateChip(word: SetupMethod.anonymous.word, signal: .ok)
+            }
+            Text("Reads what \(draft.name) shows a visitor. No silences, no push.")
+                .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
+            Button("Use a different way in") { draft.resetVerification() }
+                .buttonStyle(MomentaryButtonStyle())
+                .padding(.leading, -Brand.Space.inline)
+        }
+        .padding(Brand.Space.label)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Brand.Tone.surface)
+        .clipShape(RoundedRectangle(cornerRadius: Brand.Radius.panel))
     }
 
     private func signedInPlate(_ user: GrafanaUser) -> some View {

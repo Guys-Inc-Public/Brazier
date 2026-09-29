@@ -13,14 +13,18 @@ struct NotificationsStep: View {
 
     var body: some View {
         StepPage(title: "Alerts on the lock screen", lead: "Grafana cannot push to phones by itself. A small relay, run by whoever runs your Grafana, receives its webhook and hands each alert to Apple.") {
-            if let relay = draft.relayURL {
+            if let relay = draft.relayURL, draft.method == .anonymous {
+                ReadingLine(signal: .wait, text: "Relay \(relay.host ?? relay.absoluteString) · found, but a phone is filed under a Grafana login")
+                Text("You are browsing without signing in, so the relay cannot know whose phone this is. Sign in later under Settings › Servers and pushes start.")
+                    .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
+            } else if let relay = draft.relayURL {
                 ReadingLine(signal: .ok, text: "Relay \(relay.host ?? relay.absoluteString) · alerts will be handed to this phone")
                 Text("Continue asks iOS for permission to show notifications, then registers this phone with the relay under your Grafana login.")
                     .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
             } else {
                 VStack(alignment: .leading, spacing: Brand.Space.hairline) {
                     Eyebrow("no relay")
-                    Text("Push needs a relay, and none was given. Alerts still read from Grafana whenever the app is open. Go back to enter your admin's relay address, or add one later under Settings.")
+                    Text("Push needs a relay, and none was given. Alerts still read from Grafana whenever the app is open. Go back to enter your admin's relay address, or add one later under Settings › Servers.")
                         .font(BrandFont.small).foregroundStyle(Brand.Tone.paper)
                 }
                 Text("Continue still asks iOS for permission, so a relay added later works at once.")
