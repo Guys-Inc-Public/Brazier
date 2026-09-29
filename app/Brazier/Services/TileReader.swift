@@ -28,8 +28,10 @@ enum TileReader {
     static let maxPanels = 12
     static let maxSeries = 12
 
-    /// The body for /api/ds/query: the panel's targets as they are, plus the keys the endpoint wants.
-    static func request(for panel: Panel) -> DataQueryRequest? {
+    /// The body for /api/ds/query: the panel's targets as they are, over the dashboard's own time range,
+    /// plus the keys the endpoint wants. A fine step (15 s floor, at most 1,500 points) keeps a "last
+    /// value" reading as fresh as the page's; a coarse one could hand back a sample minutes old.
+    static func request(for panel: Panel, from: String = "now-6h", to: String = "now") -> DataQueryRequest? {
         var queries: [JSONValue] = []
         for (i, target) in panel.targets.enumerated() {
             guard var q = target.object else { continue }
@@ -38,12 +40,12 @@ enum TileReader {
             if q["datasource"]?.object?["uid"] == nil {
                 if let ds = panel.datasource, ds.uid != nil { q["datasource"] = ds.json } else { continue }
             }
-            q["intervalMs"] = .number(60_000)
-            q["maxDataPoints"] = .number(100)
+            q["intervalMs"] = .number(15_000)
+            q["maxDataPoints"] = .number(1_500)
             queries.append(.object(q))
         }
         guard !queries.isEmpty else { return nil }
-        return DataQueryRequest(from: "now-6h", to: "now", queries: queries)
+        return DataQueryRequest(from: from, to: to, queries: queries)
     }
 
     /// Frames in, series out: one per numeric field, reduced by the panel's calculation.

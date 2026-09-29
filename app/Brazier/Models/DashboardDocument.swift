@@ -10,8 +10,13 @@ struct DashboardDocument: Decodable {
     let title: String
     let uid: String?
     let panels: [Panel]
+    /// The dashboard's own time range (`time.from` / `time.to`, Grafana's relative syntax or absolute
+    /// times); the tiles ask their queries over it, as the page does.
+    let timeFrom: String
+    let timeTo: String
 
-    private enum CodingKeys: String, CodingKey { case title, uid, panels }
+    private enum CodingKeys: String, CodingKey { case title, uid, panels, time }
+    private struct TimeRange: Decodable { let from: String?; let to: String? }
 
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -19,6 +24,15 @@ struct DashboardDocument: Decodable {
         uid = try c.decodeIfPresent(String.self, forKey: .uid)
         let raw = try c.decodeIfPresent([Panel].self, forKey: .panels) ?? []
         panels = raw.flatMap { $0.type == "row" ? ($0.panels ?? []) : [$0] }
+        let time = try? c.decodeIfPresent(TimeRange.self, forKey: .time)
+        timeFrom = time?.from?.isEmpty == false ? time!.from! : "now-6h"
+        timeTo = time?.to?.isEmpty == false ? time!.to! : "now"
+    }
+
+    /// "last 24h" for `now-24h`…`now`; otherwise the range as written.
+    var rangeWord: String {
+        if timeTo == "now", timeFrom.hasPrefix("now-") { return "last \(timeFrom.dropFirst(4))" }
+        return "\(timeFrom) to \(timeTo)"
     }
 
     /// The panels the tiles can render, in the dashboard's own order: stat, gauge and bar gauge all

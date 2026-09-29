@@ -51,7 +51,7 @@ signpost does not cover.
 | Username and password, Grafana's page, auth proxy | the cookie jar is put into the web view's cookie store before the page loads | built |
 | Provider through Grafana's JWT auth | the ID token rides as `X-JWT-Assertion` on the page load and, through a script in the page, on every request the page makes itself | built; an ID token that lapses while a dashboard stays open makes the page's requests fail until it is reopened |
 | Service-account token | the same, with `Authorization: Bearer` | built |
-| Any of the above | a dashboard's `stat`, `gauge` and `bargauge` panels rendered natively as tiles, their queries run through `/api/ds/query` | built (build 6; gauges build 7) |
+| Any of the above | a dashboard's `stat`, `gauge` and `bargauge` panels rendered natively as tiles, their queries run through `/api/ds/query` over the dashboard's own time range with a 15-second step floor, so a "last value" is as fresh as the page's | built (build 6; gauges build 7; the range build 9) |
 | Anonymous | the page and the tiles load plain, as a visitor | built (build 7) |
 | Any signed-in user | a star on the dashboard, Grafana's own (`/api/user/stars/dashboard/uid/…`), starred first in the list | built (build 7) |
 

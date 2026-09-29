@@ -52,6 +52,16 @@ hand or a form only CJ can fill.
   Grafana meets Authelia's portal first, then Grafana's form, and lands on the same plate, `/api/user`
   having answered through the gate with both cookies in the jar. The main relay now serves `demo-txt`
   too, so a walkthrough begun there registers as well.
+- **Build 9, after CJ's first look at build 8: "all boxes on the dashboards show as cancelled".** The
+  tiles were publishing the outcome of a read the view had cancelled: every query answers "cancelled"
+  (Apple's wording) the moment the tiles' task is torn down, and a restarted task then skipped its own
+  read because the flag from the dead one still said "reading", so the faults stood for a minute. A
+  token in the simulator never showed it; the phone's provider sign-in and a real tap's transition did.
+  Now a cancelled read publishes nothing and never blocks the next, a cancelled dashboard load is not
+  a fault, and a dozen concurrent tile queries share one refresh of the provider token instead of each
+  spending the refresh token (providers rotate it; every refresh but the first would have failed, and
+  build 8 would have read that as the sign-in ending). Also: the tiles now ask over the dashboard's own
+  time range with a fine step, so "Down now" on a tile matches the page instead of trailing it by minutes.
 - **Keystone.** Daniel was already in `meade-manor-admins` (added earlier today; he signed in at 12:26 UTC),
   so that open item was closed before this session touched it. The Grafana application's launch URL
   was still `grafana.guysinc.org`; it is `grafana.gicloud.org` now.
@@ -68,8 +78,8 @@ hand or a form only CJ can fill.
   registers, then sets the key: the README's order is right.
 
 ## Open
-- CJ's phone on build 8 before Submit: a dashboard left open past ten minutes still reads afterwards,
-  and the fronted Grafana signs in through its page (gatekeeper, then reviewer).
+- CJ's phone on build 9 before Submit: the tiles read on every open, a dashboard left open past ten
+  minutes still reads afterwards, and the fronted Grafana signs in through its page (gatekeeper, then reviewer).
 - App Store Connect, CJ only: the review contact phone number and demo account through
   `scripts/listing.mjs`, the App Privacy answers ("Data Not Collected"), Submit for Review.
 - TESS trademark search; a hosted relay tier; Android.

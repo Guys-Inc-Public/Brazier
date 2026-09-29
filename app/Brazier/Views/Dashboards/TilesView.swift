@@ -46,7 +46,7 @@ struct TilesView: View {
                 HStack {
                     AsOfStamp(asOf: asOf, failedAt: nil)
                     Spacer()
-                    Eyebrow("\(document.tilePanels.count) panels · last 6 h")
+                    Eyebrow("\(document.tilePanels.count) panels · \(document.rangeWord)")
                 }
                 .padding(.horizontal, Brand.Space.card).padding(.vertical, Brand.Space.inline)
             }
@@ -108,7 +108,9 @@ struct TilesView: View {
     // MARK: Reading
 
     private func read() async {
-        guard let server = model.selectedServer, !reading else { return }
+        // Two reads may overlap (a pull during the minute's read, a tab switch that restarts the task);
+        // the later one wins and a cancelled one publishes nothing, so no guard against overlap is needed.
+        guard let server = model.selectedServer else { return }
         reading = true
         defer { reading = false }
         let client = model.client(for: server)
@@ -117,7 +119,7 @@ struct TilesView: View {
             for (i, panel) in panels.enumerated() {
                 group.addTask {
                     var r = TileReading(panel: panel)
-                    guard let request = TileReader.request(for: panel) else {
+                    guard let request = TileReader.request(for: panel, from: document.timeFrom, to: document.timeTo) else {
                         r.fault = "No query the app can run"
                         return (i, r)
                     }
@@ -134,6 +136,9 @@ struct TilesView: View {
             for await item in group { out.append(item) }
             return out.sorted { $0.0 < $1.0 }.map { $0.1 }
         }
+        // A read the view cancelled (it went away, or its task restarted) ends in "cancelled" faults;
+        // those are not readings and must not replace what the screen shows.
+        guard !Task.isCancelled else { return }
         readings = results
         asOf = Date()
     }

@@ -92,6 +92,8 @@ struct DashboardView: View {
             #endif
             document = doc
         } catch {
+            // The view went away or its task restarted mid-read: not a fault, and the restart reads again.
+            guard !Task.isCancelled else { return }
             fault = error.localizedDescription
             model.record("GET /api/dashboards/uid/\(hit.uid)", error)
         }

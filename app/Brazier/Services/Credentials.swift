@@ -48,6 +48,10 @@ enum AuthError: LocalizedError {
 /// Hands out the credential a request needs: the cookie jar, the pasted token, or an ID token
 /// refreshed when it is about to lapse. Every secret goes through the keychain.
 actor CredentialProvider {
+    /// The refresh in flight per server, so a dozen concurrent requests share one round trip to the
+    /// provider. Providers rotate refresh tokens on use; a second refresh with the old one is refused.
+    private var refreshing: [UUID: Task<String, Error>] = [:]
+
     func credential(for server: Server, forceRefresh: Bool = false) async throws -> Credential {
         switch server.auth {
         case .session:
@@ -65,22 +69,39 @@ actor CredentialProvider {
                exp > Date().addingTimeInterval(60) {
                 return .jwt(idToken)
             }
-            guard let refresh = Keychain.get(SecretKey.refreshToken(server.id)) else { throw AuthError.signedOut }
-            let config = try await OIDC.discover(issuer: issuer)
-            let tokens: TokenResponse
-            do {
-                tokens = try await OIDC.refresh(config: config, clientID: clientID, refreshToken: refresh)
-            } catch OIDCError.token(let status, _) where status == 400 || status == 401 {
-                // invalid_grant: the refresh token lapsed or was revoked at the provider. The sign-in is
-                // over; the bay then offers the provider again rather than "read again".
-                Keychain.delete(SecretKey.refreshToken(server.id))
-                Keychain.delete(SecretKey.idToken(server.id))
-                throw AuthError.sessionEnded
+            if let inFlight = refreshing[server.id] {
+                return .jwt(try await inFlight.value)
             }
-            try store(tokens, for: server)
-            guard let idToken = tokens.idToken else { throw AuthError.noIDToken }
-            return .jwt(idToken)
+            // The token may have been refreshed while this caller waited for the actor.
+            if !forceRefresh,
+               let idToken = Keychain.get(SecretKey.idToken(server.id)),
+               let exp = JWT.expiry(of: idToken),
+               exp > Date().addingTimeInterval(60) {
+                return .jwt(idToken)
+            }
+            let task = Task<String, Error> { try await self.refreshIDToken(server: server, issuer: issuer, clientID: clientID) }
+            refreshing[server.id] = task
+            defer { refreshing[server.id] = nil }
+            return .jwt(try await task.value)
         }
+    }
+
+    private func refreshIDToken(server: Server, issuer: URL, clientID: String) async throws -> String {
+        guard let refresh = Keychain.get(SecretKey.refreshToken(server.id)) else { throw AuthError.signedOut }
+        let config = try await OIDC.discover(issuer: issuer)
+        let tokens: TokenResponse
+        do {
+            tokens = try await OIDC.refresh(config: config, clientID: clientID, refreshToken: refresh)
+        } catch OIDCError.token(let status, _) where status == 400 || status == 401 {
+            // invalid_grant: the refresh token lapsed or was revoked at the provider. The sign-in is
+            // over; the bay then offers the provider again rather than "read again".
+            Keychain.delete(SecretKey.refreshToken(server.id))
+            Keychain.delete(SecretKey.idToken(server.id))
+            throw AuthError.sessionEnded
+        }
+        try store(tokens, for: server)
+        guard let idToken = tokens.idToken else { throw AuthError.noIDToken }
+        return idToken
     }
 
     func store(_ tokens: TokenResponse, for server: Server) throws {
