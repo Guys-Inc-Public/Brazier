@@ -46,6 +46,15 @@ struct DoneStep: View {
     let draft: SetupDraft
     let onFinished: () -> Void
 
+    private var signInLine: String {
+        switch draft.method {
+        case .oidc: return "\(draft.providerName ?? "Provider") single sign-on"
+        case .session: return "Grafana's page"
+        case .token: return "Service account token"
+        case nil: return ""
+        }
+    }
+
     private var pushLine: String {
         guard draft.relayURL != nil else { return "not set up; add a relay under Settings" }
         switch draft.notificationsGranted {
@@ -59,7 +68,7 @@ struct DoneStep: View {
         StepPage(title: "You're set", lead: "\(draft.name) is mounted. Alerts read from it now; pushes arrive when the relay hands one over.") {
             KeyValueRows(rows: [
                 ("Server", draft.url?.absoluteString ?? draft.name),
-                ("Sign-in", draft.savedServer?.authMethodName ?? draft.method?.word ?? ""),
+                ("Sign-in", signInLine),
                 ("As", draft.user?.login ?? ""),
                 ("Push", pushLine),
             ])

@@ -43,9 +43,9 @@ struct Server: Identifiable, Codable, Hashable {
 
     var authMethodName: String {
         switch auth {
-        case .session: return "Grafana sign-in"
+        case .session: return "Grafana's page"
         case .token: return "Service account token"
-        case .oidc: return "Single sign-on"
+        case .oidc(let issuer, _): return "Single sign-on · \(issuer.host ?? "provider")"
         }
     }
 

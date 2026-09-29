@@ -37,6 +37,15 @@ enum ServerAddress {
     }
 }
 
+extension ServerAddress {
+    /// scheme://host[:port], what a relay files a Grafana under.
+    static func origin(of url: URL) -> String {
+        guard let scheme = url.scheme, let host = url.host else { return url.absoluteString }
+        if let port = url.port { return "\(scheme)://\(host):\(port)" }
+        return "\(scheme)://\(host)"
+    }
+}
+
 /// One GET each, before a server exists: is there a Grafana at this address, and who am I on it.
 enum ServerProbe {
     enum Outcome: Equatable {

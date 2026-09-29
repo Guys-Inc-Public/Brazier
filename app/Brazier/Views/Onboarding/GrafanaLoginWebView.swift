@@ -10,6 +10,12 @@ struct GrafanaLoginSheet: View {
     @State private var status = "Opening the sign-in page"
     @State private var location = ""
 
+    /// The page left the Grafana's host: single sign-on is happening inside a web view, where passkeys cannot.
+    private var bounced: Bool {
+        guard let host = server.host?.lowercased(), !location.isEmpty else { return false }
+        return location.lowercased() != host
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack(alignment: .center, spacing: Brand.Space.label) {
@@ -25,6 +31,18 @@ struct GrafanaLoginSheet: View {
             .padding(.horizontal, Brand.Space.card)
             .padding(.vertical, Brand.Space.inline)
             Hairline()
+            if bounced {
+                HStack(alignment: .top, spacing: Brand.Space.inline) {
+                    Lamp(signal: .wait).padding(.top, 5)
+                    Text("This sign-on may need a passkey, which does not work here. If it fails, go back and enter your admin's relay address, or use a token.")
+                        .font(BrandFont.small).foregroundStyle(Brand.Tone.paper)
+                }
+                .padding(.horizontal, Brand.Space.card)
+                .padding(.vertical, Brand.Space.inline)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Brand.Tone.surface)
+                Hairline()
+            }
             GrafanaLoginWebView(server: server, status: $status, location: $location, onSignedIn: onSignedIn)
                 .ignoresSafeArea(edges: .bottom)
         }

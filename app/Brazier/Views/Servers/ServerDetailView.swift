@@ -14,8 +14,14 @@ struct ServerDetailView: View {
     @State private var signedIn = false
     @State private var who: String?
     @State private var showWeb = false
+    @State private var issuerText = ""
+    @State private var clientID = ""
 
     private var server: Server? { model.store.server(id: serverID) }
+
+    private var providerReady: Bool {
+        URL(string: issuerText.trimmingCharacters(in: .whitespaces))?.host != nil && !clientID.trimmingCharacters(in: .whitespaces).isEmpty
+    }
 
     var body: some View {
         if let server {
@@ -59,7 +65,9 @@ struct ServerDetailView: View {
                             case .session:
                                 Button(signedIn ? "Sign in again" : "Sign in") { showWeb = true }
                                     .buttonStyle(ThrowButtonStyle())
-                            case .oidc:
+                            case .oidc(let issuer, _):
+                                Text("Through \(issuer.host ?? "the provider"), in the system sign-in sheet.")
+                                    .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
                                 Button(signedIn ? "Sign in again" : "Sign in") {
                                     busy = true
                                     Task { latch = await model.signIn(server); await reload(); busy = false }
@@ -89,6 +97,22 @@ struct ServerDetailView: View {
                         Button("Mount \(server.name)") { model.select(server) }
                             .buttonStyle(ThrowButtonStyle(primary: false))
                     }
+                    Labelled("advanced sign-in") {
+                        Text("Only if your admin has Grafana's JWT auth pointed at an identity provider and gave you these. The app then signs in there as its own public client and hands Grafana the ID token.")
+                            .font(BrandFont.small).foregroundStyle(Brand.Tone.muted)
+                        TextField("Issuer URL", text: $issuerText).fieldChrome()
+                            .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
+                        TextField("Client id", text: $clientID).fieldChrome()
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                        if busy {
+                            EmptyView()
+                        } else if !providerReady {
+                            Interlock(reason: "Enter the issuer and client id")
+                        } else {
+                            Button("Sign in with the provider") { switchToProvider(server) }
+                                .buttonStyle(ThrowButtonStyle(primary: false))
+                        }
+                    }
                     Labelled("remove") {
                         GuardedThrow(verb: "Remove", cutList: cutList(for: server)) {
                             Task { await model.remove(server); dismiss() }
@@ -114,6 +138,28 @@ struct ServerDetailView: View {
             }
         } else {
             BlankBay(title: "Removed", text: "This server is no longer in the list.")
+        }
+    }
+
+    /// Sign in at the provider; only when Grafana accepts the ID token does the server switch to that mode.
+    private func switchToProvider(_ server: Server) {
+        guard let issuer = URL(string: issuerText.trimmingCharacters(in: .whitespaces)) else { return }
+        var updated = server
+        updated.auth = .oidc(issuer: issuer, clientID: clientID.trimmingCharacters(in: .whitespaces))
+        busy = true
+        Task {
+            let result = await model.signIn(updated)
+            if case .pass = result {
+                model.store.update(updated)
+                Keychain.delete(SecretKey.sessionCookie(server.id))
+                Keychain.delete(SecretKey.sessionExpiry(server.id))
+                Keychain.delete(SecretKey.apiToken(server.id))
+                issuerText = ""
+                clientID = ""
+            }
+            latch = result
+            await reload()
+            busy = false
         }
     }
 

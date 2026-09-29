@@ -19,19 +19,21 @@ final class SetupDraft {
     var urlText = ""
     var url: URL?
     var health: ServerProbe.Outcome?
+    /// The address text the current health reading belongs to.
+    var checkedText = ""
+    var relayText = ""
+    var relayHealth: RelayHealth?
+    var relayDirectory: RelayDirectory?
+    var testedRelayText = ""
     var method: SetupMethod?
     var user: GrafanaUser?
     var sessionCookie: String?
     var sessionExpiry: String?
     var apiToken = ""
-    var issuerText = ""
-    var clientID = ""
+    var oidcIssuer: URL?
+    var oidcClientID = ""
+    var providerName: String?
     var oidcTokens: TokenResponse?
-    /// The address text the current health reading belongs to.
-    var checkedText = ""
-    var relayText = ""
-    var relayHealth: RelayHealth?
-    var testedRelayText = ""
     var notificationsGranted: Bool?
     var savedServer: Server?
     #if DEBUG
@@ -45,13 +47,21 @@ final class SetupDraft {
         return nil
     }
 
+    var relayTested: Bool { relayHealth?.ok == true && testedRelayText == relayText && relayURL != nil }
+
+    /// What the tested relay says about signing in to this Grafana, if anything.
+    var published: RelayDirectory.SignIn? {
+        guard let url, relayTested, let relayDirectory else { return nil }
+        return relayDirectory.signIn(for: ServerAddress.origin(of: url))
+    }
+
     var authMode: Server.AuthMode? {
         switch method {
         case .session: return .session
         case .token: return .token
         case .oidc:
-            guard let issuer = URL(string: issuerText) else { return nil }
-            return .oidc(issuer: issuer, clientID: clientID)
+            guard let oidcIssuer else { return nil }
+            return .oidc(issuer: oidcIssuer, clientID: oidcClientID)
         case nil: return nil
         }
     }
@@ -63,10 +73,13 @@ final class SetupDraft {
         sessionCookie = nil
         sessionExpiry = nil
         oidcTokens = nil
+        oidcIssuer = nil
+        oidcClientID = ""
+        providerName = nil
     }
 }
 
-/// First run: welcome, server, sign in, notifications, done. From Servers, the same minus welcome.
+/// First run: welcome, server and relay, sign in, notifications, done. From Servers, the same minus welcome.
 struct OnboardingFlow: View {
     @Environment(AppModel.self) private var model
     let includeWelcome: Bool
@@ -99,7 +112,7 @@ struct OnboardingFlow: View {
                 case .signIn:
                     SignInStep(draft: draft, back: { go(.server) }) { go(.notifications) }
                 case .notifications:
-                    NotificationsStep(draft: draft, back: { go(.signIn) }) { asked in
+                    NotificationsStep(draft: draft, back: { go(.signIn) }) { _ in
                         Task { await save(); go(.done) }
                     }
                 case .done:
@@ -164,13 +177,21 @@ extension OnboardingFlow {
         draft.url = url
         draft.health = await ServerProbe.health(url)
         draft.checkedText = draft.urlText
+        if let relayRaw = env["BRAZIER_SHOT_RELAY"], !relayRaw.isEmpty {
+            draft.relayText = relayRaw
+            if let relay = draft.relayURL {
+                let client = RelayClient(baseURL: relay)
+                draft.relayHealth = try? await client.health()
+                draft.relayDirectory = try? await client.directory()
+                draft.testedRelayText = draft.relayText
+            }
+        }
         if shot == "server" { go(.server); return }
         if let token = env["BRAZIER_SHOT_TOKEN"], let user = try? await ServerProbe.user(url, credential: .bearer(token)) {
             draft.apiToken = token
             draft.user = user
             draft.method = .token
         }
-        draft.relayText = env["BRAZIER_SHOT_RELAY"] ?? ""
         switch shot {
         case "signin":
             draft.resetVerification()
@@ -180,10 +201,6 @@ extension OnboardingFlow {
             draft.debugOpenWeb = true
             go(.signIn)
         case "notifications":
-            if let relay = draft.relayURL {
-                draft.relayHealth = try? await RelayClient(baseURL: relay).health()
-                draft.testedRelayText = draft.relayText
-            }
             go(.notifications)
         case "done":
             await save()

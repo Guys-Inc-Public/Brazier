@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Step 2: three ways in, in the order most people should try them. Continue needs a verified user.
+/// Step 2: the way in. When the relay published a provider for this Grafana, the system sign-in sheet
+/// leads, because passkeys work there and not in a page inside the app. Continue needs a verified user.
 struct SignInStep: View {
     @Bindable var draft: SetupDraft
     let back: () -> Void
@@ -10,15 +11,19 @@ struct SignInStep: View {
     @State private var busy = false
     @State private var latch: ThrowResult?
     @State private var tokenOpen = false
-    @State private var advancedOpen = false
+    @State private var pageOpen = false
+
+    private static let pageNote = "For a Grafana that signs in with a password. Single sign-on that needs a passkey does not work here."
 
     var body: some View {
         StepPage(title: "Sign in to \(draft.name)", lead: "Sign in the way you already do. Brazier keeps only the session, in this phone's keychain.") {
             if let latch { LatchView(result: latch) { self.latch = nil } }
             if let user = draft.user {
                 signedInPlate(user)
+            } else if let published = draft.published {
+                providerFirst(published)
             } else {
-                methods
+                pageFirst
             }
         } footer: {
             StepButtons(back: back, primary: "Continue", blocker: draft.user == nil ? "Sign in to continue" : nil, busy: busy, action: next)
@@ -61,40 +66,46 @@ struct SignInStep: View {
         .clipShape(RoundedRectangle(cornerRadius: Brand.Radius.panel))
     }
 
-    private var methods: some View {
+    /// The relay named the provider: one obvious button into the system sheet, the rest folded away.
+    private func providerFirst(_ signIn: RelayDirectory.SignIn) -> some View {
         VStack(alignment: .leading, spacing: Brand.Space.label) {
-            MethodCard(title: "Sign in with Grafana", chip: "recommended",
-                       text: "Grafana's own sign-in page opens here. If your Grafana uses single sign-on, the page takes you there and back.") {
+            MethodCard(title: "Sign in with \(signIn.displayName)", chip: "recommended",
+                       text: "Opens the system sign-in sheet at \(signIn.issuer.host ?? "your provider"); passkeys and Face ID work there.") {
+                Button("Sign in with \(signIn.displayName)") { signInWithProvider(signIn) }
+                    .buttonStyle(ThrowButtonStyle())
+            }
+            tokenCard
+            MethodCard(title: "Sign in on your Grafana's page", text: Self.pageNote, open: $pageOpen) {
+                Button("Open the sign-in page") { showWeb = true }
+                    .buttonStyle(ThrowButtonStyle(primary: false))
+            }
+        }
+    }
+
+    /// No relay, or one that does not know this Grafana: Grafana's own page leads.
+    private var pageFirst: some View {
+        VStack(alignment: .leading, spacing: Brand.Space.label) {
+            MethodCard(title: "Sign in on your Grafana's page", chip: "recommended",
+                       text: "Grafana's own sign-in page opens here. " + Self.pageNote) {
                 Button("Open the sign-in page") { showWeb = true }
                     .buttonStyle(ThrowButtonStyle())
             }
-            MethodCard(title: "Service account token", text: "For a Grafana without a browser sign-in, or for a read-only watcher.", open: $tokenOpen) {
-                VStack(alignment: .leading, spacing: Brand.Space.inline) {
-                    NumberedLine(n: 1, text: "In Grafana: Administration › Users and access › Service accounts › Add service account.")
-                    NumberedLine(n: 2, text: "Role Viewer to watch, Editor to silence. Then Add service account token.")
-                    NumberedLine(n: 3, text: "Copy the token (it starts with glsa_) and paste it here.")
-                    SecureField("glsa_…", text: $draft.apiToken).fieldChrome()
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    if draft.apiToken.trimmingCharacters(in: .whitespaces).isEmpty {
-                        Interlock(reason: "Paste the token to verify it")
-                    } else {
-                        Button("Verify token", action: verifyToken).buttonStyle(ThrowButtonStyle(primary: false))
-                    }
-                }
-            }
-            MethodCard(title: "Advanced · single sign-on for the app",
-                       text: "The app signs in at your identity provider as its own public client (PKCE) and hands Grafana the ID token. Your Grafana admin must have JWT auth pointed at that provider.",
-                       open: $advancedOpen) {
-                VStack(alignment: .leading, spacing: Brand.Space.inline) {
-                    TextField("Issuer URL", text: $draft.issuerText).fieldChrome()
-                        .keyboardType(.URL).textInputAutocapitalization(.never).autocorrectionDisabled()
-                    TextField("Client id", text: $draft.clientID).fieldChrome()
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    if URL(string: draft.issuerText)?.host == nil || draft.clientID.isEmpty {
-                        Interlock(reason: "Enter the issuer and client id")
-                    } else {
-                        Button("Sign in with the provider", action: signInWithProvider).buttonStyle(ThrowButtonStyle(primary: false))
-                    }
+            tokenCard
+        }
+    }
+
+    private var tokenCard: some View {
+        MethodCard(title: "Service account token", text: "For a Grafana without a browser sign-in, or for a read-only watcher.", open: $tokenOpen) {
+            VStack(alignment: .leading, spacing: Brand.Space.inline) {
+                NumberedLine(n: 1, text: "In Grafana: Administration › Users and access › Service accounts › Add service account.")
+                NumberedLine(n: 2, text: "Role Viewer to watch, Editor to silence. Then Add service account token.")
+                NumberedLine(n: 3, text: "Copy the token (it starts with glsa_) and paste it here.")
+                SecureField("glsa_…", text: $draft.apiToken).fieldChrome()
+                    .textInputAutocapitalization(.never).autocorrectionDisabled()
+                if draft.apiToken.trimmingCharacters(in: .whitespaces).isEmpty {
+                    Interlock(reason: "Paste the token to verify it")
+                } else {
+                    Button("Verify token", action: verifyToken).buttonStyle(ThrowButtonStyle(primary: false))
                 }
             }
         }
@@ -120,23 +131,25 @@ struct SignInStep: View {
         }
     }
 
-    private func signInWithProvider() {
-        guard let url = draft.url, let issuer = URL(string: draft.issuerText.trimmingCharacters(in: .whitespaces)) else { return }
-        let clientID = draft.clientID.trimmingCharacters(in: .whitespaces)
+    private func signInWithProvider(_ signIn: RelayDirectory.SignIn) {
+        guard let url = draft.url else { return }
         busy = true
         Task {
             do {
-                let tokens = try await OIDC.signIn(issuer: issuer, clientID: clientID)
+                let tokens = try await OIDC.signIn(issuer: signIn.issuer, clientID: signIn.clientId)
                 guard let idToken = tokens.idToken else { throw OIDCError.noIDToken }
                 let user = try await ServerProbe.user(url, credential: .jwt(idToken))
                 draft.oidcTokens = tokens
+                draft.oidcIssuer = signIn.issuer
+                draft.oidcClientID = signIn.clientId
+                draft.providerName = signIn.displayName
                 draft.user = user
                 draft.method = .oidc
                 latch = nil
             } catch OIDCError.cancelled {
                 latch = .refuse("Sign-in cancelled")
             } catch is AuthError {
-                latch = .refuse("The provider signed you in, but Grafana rejected the ID token. Its JWT auth must trust this provider.")
+                latch = .refuse("\(signIn.displayName) signed you in, but Grafana rejected the ID token. Its JWT auth must trust this provider.")
             } catch {
                 latch = .refuse(error.localizedDescription)
             }

@@ -30,6 +30,29 @@ struct RelayRegistration: Decodable {
     let devices: Int?
 }
 
+/// What a relay publishes at /.well-known/brazier: for each Grafana it serves, how its people sign in,
+/// if the admin said. The app uses it to offer the right first button.
+struct RelayDirectory: Decodable {
+    struct Relay: Decodable { let version: String? }
+    struct SignIn: Decodable, Equatable {
+        let issuer: URL
+        let clientId: String
+        let name: String?
+        var displayName: String { name ?? issuer.host ?? "your provider" }
+    }
+    struct Entry: Decodable { let signIn: SignIn? }
+    let relay: Relay?
+    let grafana: [String: Entry]?
+
+    /// The entry for a Grafana origin (scheme://host[:port]), if the relay has one.
+    func signIn(for origin: String) -> SignIn? {
+        guard let grafana else { return nil }
+        let wanted = origin.lowercased()
+        let trim = CharacterSet(charactersIn: "/")
+        return grafana.first { $0.key.lowercased().trimmingCharacters(in: trim) == wanted }?.value.signIn
+    }
+}
+
 /// Device registration with the push relay. The relay verifies the caller against their own
 /// Grafana: it gets the Grafana's origin and the same credential the app uses, as headers, and
 /// files the APNs token under that Grafana login.
@@ -58,6 +81,17 @@ struct RelayClient {
         let data = try await send(request, origin: nil)
         guard let health = try? JSONDecoder().decode(RelayHealth.self, from: data) else { throw RelayError.unreadable }
         return health
+    }
+
+    /// The relay's directory; a relay without one (or an older relay) answers 404, which reads as empty.
+    func directory() async throws -> RelayDirectory {
+        var request = URLRequest(url: baseURL.appending(path: ".well-known/brazier"))
+        request.httpMethod = "GET"
+        let data: Data
+        do { data = try await send(request, origin: nil) }
+        catch RelayError.http(404, _) { return RelayDirectory(relay: nil, grafana: nil) }
+        guard let directory = try? JSONDecoder().decode(RelayDirectory.self, from: data) else { throw RelayError.unreadable }
+        return directory
     }
 
     func register(token: String, environment: String, name: String, server: Server, credential: Credential) async throws -> RelayRegistration {
