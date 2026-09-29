@@ -32,6 +32,49 @@ services:
       - grafana_data:/var/lib/grafana
       - ./provisioning:/etc/grafana/provisioning:ro
 
+  # A second Grafana behind Authelia, at https://fronted.brazier.gicloud.org: the compatibility matrix's
+  # "auth proxy in front of Grafana" row, live. The gate asks Authelia about every request before this
+  # Grafana sees it; Grafana's own sign-in then applies as usual. No alerting provisioning: its contact
+  # point would need the relay, and this instance exists to prove the sign-in path, not push.
+  grafana-fronted:
+    image: grafana/grafana:13.2.3
+    container_name: brazier-demo-grafana-fronted
+    restart: unless-stopped
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD}
+      GF_SERVER_ROOT_URL: https://fronted.brazier.gicloud.org/
+      GF_SERVER_DOMAIN: fronted.brazier.gicloud.org
+      GF_SECURITY_COOKIE_SECURE: "true"
+      GF_SECURITY_CSRF_TRUSTED_ORIGINS: fronted.brazier.gicloud.org
+      GF_SECURITY_DISABLE_GRAVATAR: "true"
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_USERS_DEFAULT_THEME: dark
+      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
+      GF_ANALYTICS_CHECK_FOR_PLUGIN_UPDATES: "false"
+      GF_NEWS_NEWS_FEED_ENABLED: "false"
+      GF_UNIFIED_ALERTING_ENABLED: "true"
+    volumes:
+      - grafana_fronted_data:/var/lib/grafana
+      - ./provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+
+  # The sign-in gate in front of grafana-fronted: one file user (authelia/users.yml), one factor.
+  authelia:
+    image: authelia/authelia:4.38
+    container_name: brazier-demo-authelia
+    restart: unless-stopped
+    environment:
+      AUTHELIA_IDENTITY_VALIDATION_RESET_PASSWORD_JWT_SECRET: ${AUTHELIA_JWT_SECRET}
+      AUTHELIA_SESSION_SECRET: ${AUTHELIA_SESSION_SECRET}
+      AUTHELIA_STORAGE_ENCRYPTION_KEY: ${AUTHELIA_STORAGE_ENCRYPTION_KEY}
+    volumes:
+      - authelia_data:/config
+      - ./authelia/configuration.yml:/config/configuration.yml:ro
+      - ./authelia/users.yml:/config/users.yml:ro
+
   # The only public face of the box for this stack: 403 without the key the Worker adds. Port 8880
   # because a Worker may only fetch an outside host on the ports Cloudflare proxies, and 8080 is taken.
   gate:
@@ -48,6 +91,10 @@ services:
       - ./gate/templates:/etc/nginx/templates:ro
     depends_on:
       - grafana
+      - grafana-fronted
+      - authelia
 
 volumes:
   grafana_data: {}
+  grafana_fronted_data: {}
+  authelia_data: {}

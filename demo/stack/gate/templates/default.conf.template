@@ -1,4 +1,9 @@
 # Only the brazier-demo Worker knows the key; everyone else gets 403 and never reaches Grafana.
+# One listener, routed by the hostname the Worker was reached on (it forwards it as X-Forwarded-Host,
+# since a Worker's fetch cannot carry the outside Host):
+#   demo.brazier.gicloud.org      the demo Grafana (also any other name, demo-txt.* included)
+#   fronted.brazier.gicloud.org   a second Grafana behind Authelia: every request must carry an
+#                                 Authelia session first, then Grafana's own sign-in applies as usual
 server {
     listen 80;
     server_name _;
@@ -8,6 +13,9 @@ server {
     }
 
     location / {
+        if ($http_x_forwarded_host = "fronted.brazier.gicloud.org") {
+            rewrite ^ /__fronted$uri last;
+        }
         proxy_pass http://grafana:3000;
         proxy_http_version 1.1;
         proxy_set_header Host demo.brazier.gicloud.org;
@@ -15,6 +23,60 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto https;
         proxy_set_header X-Forwarded-Host demo.brazier.gicloud.org;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_read_timeout 120s;
+    }
+
+    # The Authelia portal and its API, under /authelia on the fronted hostname; no gate on the gate.
+    location /__fronted/authelia/ {
+        internal;
+        proxy_pass http://authelia:9091/authelia/;
+        proxy_http_version 1.1;
+        proxy_set_header Host fronted.brazier.gicloud.org;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host fronted.brazier.gicloud.org;
+        proxy_set_header X-Forwarded-URI $request_uri;
+        proxy_set_header X-Forwarded-Method $request_method;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+    }
+
+    # nginx asks Authelia about every request to the fronted Grafana (the AuthRequest endpoint).
+    location = /__fronted/authelia/api/authz/auth-request {
+        internal;
+        proxy_pass http://authelia:9091/authelia/api/authz/auth-request;
+        proxy_http_version 1.1;
+        proxy_set_header Host fronted.brazier.gicloud.org;
+        proxy_set_header X-Original-Method $request_method;
+        proxy_set_header X-Original-URL https://fronted.brazier.gicloud.org$request_uri;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host fronted.brazier.gicloud.org;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header Content-Length "";
+        proxy_set_header Connection "";
+        proxy_pass_request_body off;
+    }
+
+    # The fronted Grafana itself: 401 from Authelia becomes a 302 to the portal, with the way back.
+    location /__fronted/ {
+        internal;
+        auth_request /__fronted/authelia/api/authz/auth-request;
+        auth_request_set $redirection_url $upstream_http_location;
+        error_page 401 =302 $redirection_url;
+        auth_request_set $authelia_user $upstream_http_remote_user;
+        auth_request_set $authelia_email $upstream_http_remote_email;
+        proxy_set_header Remote-User $authelia_user;
+        proxy_set_header Remote-Email $authelia_email;
+        proxy_pass http://grafana-fronted:3000/;
+        proxy_http_version 1.1;
+        proxy_set_header Host fronted.brazier.gicloud.org;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_set_header X-Forwarded-Host fronted.brazier.gicloud.org;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection "upgrade";
         proxy_read_timeout 120s;

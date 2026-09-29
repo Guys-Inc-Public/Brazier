@@ -1,0 +1,8 @@
+# The gate's one account. The password is in /root/.config/brazier/demo-credentials on mitochondria.
+users:
+  gatekeeper:
+    disabled: false
+    displayname: Gate Keeper
+    password: '$argon2id$v=19$m=65536,t=3,p=4$zHTBpgTl5KZyqKyc58YetA$h0v90wAQcE8pRz/s1cv3Pi3qfsVGC4qpGlxzE+7vv18'
+    email: gatekeeper@brazier.invalid
+    groups: []

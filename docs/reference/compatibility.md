@@ -17,7 +17,7 @@ check that nothing in it is estate-only. Every row is built as of build 7 (1.0) 
 | Basic auth, LDAP | Username and password, posted to Grafana's own login endpoint; session kept and renewed | nothing | built |
 | Generic OAuth or OIDC provider without passkeys or web-view blocks (Keycloak, Authentik, Okta, Entra, Auth0, GitHub) | Grafana's page in the app; the provider's login runs inside it | nothing | built |
 | A provider that needs a passkey or refuses in-app web views (Google, any WebAuthn second factor) | "Sign in with <provider>" through the system sign-in sheet; Grafana's JWT auth carries the ID token | a public PKCE client for the app in the provider (redirect `brazier://auth/callback`), Grafana `[auth.jwt]` pointed at it, and the signpost below | built |
-| An auth proxy in front of Grafana (Authelia, oauth2-proxy, Cloudflare Access) | Grafana's page in the app; every cookie for the host is kept and sent | nothing | built; fixtures only, no live proxy tried yet |
+| An auth proxy in front of Grafana (Authelia, oauth2-proxy, Cloudflare Access) | Grafana's page in the app; every cookie for the host is kept and sent | nothing | built; live against Authelia 4.38 in front of Grafana 13.2.3 at `fronted.brazier.gicloud.org` (2026-09-29): the health probe meets a 302 to the portal and reads as reachable, the portal then Grafana's own form sign in on the page, and `/api/user` answers only with both cookies together |
 | Anonymous access on | "Browse without signing in": alerts, silences and dashboards as a visitor sees them; no silencing, no stars, no push (the relay files a phone under a Grafana login); signing in later on the page turns the server into a session one | nothing | built (build 7) |
 | Any Grafana | A service-account token | a token | built |
 | SAML (Enterprise), GitHub (no ID tokens) | Grafana's page in the app, or a token; no provider sign-in possible | nothing | built |
@@ -30,16 +30,16 @@ signpost does not cover.
 | Signpost | Who can set it | State |
 |---|---|---|
 | `https://<grafana host>/.well-known/brazier`, served by the proxy in front of Grafana (Cloudflare Worker route, nginx or Caddy rule) | anyone with a proxy | built; the estate uses a Worker route |
-| DNS TXT `_brazier.<grafana host>` (`v=brazier1 relay=… [issuer=… client_id=… name=…]`) | anyone with DNS | built; no live record tried yet |
+| DNS TXT `_brazier.<grafana host>` (`v=brazier1 relay=… [issuer=… client_id=… name=…]`) | anyone with DNS | built; live at `demo-txt.brazier.gicloud.org`, a name for the demo Grafana that serves no `/.well-known/brazier`, whose TXT record alone leads the address step to the relay (2026-09-29) |
 | Typed relay address | everyone | built, fallback |
 
 ## Push
 
 | Piece | Today | Public |
 |---|---|---|
-| Relay | one per admin, `wrangler deploy`, serves several Grafanas, routes by label to Grafana users; the app keeps a relay per Grafana, so two Grafanas from two admins push through two relays | same |
+| Relay | one per admin, `wrangler deploy`, serves several Grafanas, routes by label to Grafana users; the app keeps a relay per Grafana, so two Grafanas from two admins push through two relays | same; proven 2026-09-29 by a second relay (`stranger.brazier.gicloud.org`) deployed from the README's eight steps alone |
 | Webhook auth | HMAC (Grafana 11+) or HTTP Basic with the shared secret (older) | same |
-| APNs key | ours, in the estate's relay | a self-hosted relay borrows a 50-minute provider token from `grant.brazier.gicloud.org` (decision 0005) and never holds the key |
+| APNs key | ours, in the estate's relay | a self-hosted relay borrows a 50-minute provider token from `grant.brazier.gicloud.org` (decision 0005) and never holds the key; the stranger's relay above pushed with one and Apple accepted it (a bogus device answered BadDeviceToken and was dropped) |
 | Who a phone belongs to | the relay asks the user's Grafana `/api/user` with the app's credential | same; a relay is run by someone the user already trusts with their Grafana |
 
 | What a phone gets | every alert its user is routed to | the same, minus what the phone declines: organizations, a minimum severity, quiet hours (delivered silently), filed per device on the relay |

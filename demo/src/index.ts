@@ -1,7 +1,11 @@
 /** brazier-demo: the public face of the demo Grafana. Every request is forwarded to the box that runs
- *  it with the key its gate insists on, so the box's port is useless to anyone else. Two paths are
- *  answered here: /.well-known/brazier (the relay's discovery document, so the app finds the relay
- *  from the demo address alone) and robots.txt. */
+ *  it with the key its gate insists on, so the box's port is useless to anyone else. The gate routes by
+ *  the hostname this Worker was reached on (x-forwarded-host): demo.brazier.gicloud.org is the demo
+ *  Grafana, fronted.brazier.gicloud.org is a second Grafana behind an Authelia sign-in gate (the
+ *  compatibility matrix's "auth proxy in front" row, live), demo-txt.brazier.gicloud.org is the demo
+ *  again under a name that carries only a DNS TXT signpost. Two paths are answered here: the relay's
+ *  discovery document at /.well-known/brazier, on the demo hostname only (so the app finds the relay
+ *  from that address alone, and the TXT hostname proves the other signpost), and robots.txt. */
 export interface Env {
   ORIGIN: string;
   RELAY_URL: string;
@@ -41,7 +45,7 @@ async function proxy(req: Request, env: Env): Promise<Response> {
   const headers = new Headers(req.headers);
   headers.set("x-demo-key", env.DEMO_KEY);
   headers.set("x-forwarded-proto", "https");
-  headers.set("x-forwarded-host", HOST);
+  headers.set("x-forwarded-host", url.host);
   const body = req.method === "GET" || req.method === "HEAD" ? undefined : req.body;
   try {
     const r = await fetch(target.toString(), { method: req.method, headers, body, redirect: "manual" });
@@ -56,7 +60,7 @@ export default {
     const url = new URL(req.url);
     const path = url.pathname.replace(/\/+$/, "") || "/";
     if (req.method === "GET" && path === "/robots.txt") return text("User-agent: *\nDisallow: /\n");
-    if (req.method === "GET" && path === "/.well-known/brazier") return wellKnown(env);
+    if (req.method === "GET" && path === "/.well-known/brazier" && url.host.toLowerCase() === HOST) return wellKnown(env);
     return proxy(req, env);
   },
 } satisfies ExportedHandler<Env>;

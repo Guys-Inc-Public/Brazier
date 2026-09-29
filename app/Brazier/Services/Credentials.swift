@@ -67,7 +67,16 @@ actor CredentialProvider {
             }
             guard let refresh = Keychain.get(SecretKey.refreshToken(server.id)) else { throw AuthError.signedOut }
             let config = try await OIDC.discover(issuer: issuer)
-            let tokens = try await OIDC.refresh(config: config, clientID: clientID, refreshToken: refresh)
+            let tokens: TokenResponse
+            do {
+                tokens = try await OIDC.refresh(config: config, clientID: clientID, refreshToken: refresh)
+            } catch OIDCError.token(let status, _) where status == 400 || status == 401 {
+                // invalid_grant: the refresh token lapsed or was revoked at the provider. The sign-in is
+                // over; the bay then offers the provider again rather than "read again".
+                Keychain.delete(SecretKey.refreshToken(server.id))
+                Keychain.delete(SecretKey.idToken(server.id))
+                throw AuthError.sessionEnded
+            }
             try store(tokens, for: server)
             guard let idToken = tokens.idToken else { throw AuthError.noIDToken }
             return .jwt(idToken)

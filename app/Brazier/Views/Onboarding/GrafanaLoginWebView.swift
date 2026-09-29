@@ -91,8 +91,63 @@ struct GrafanaLoginWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             if let host = webView.url?.host { parent.location = host }
             if !done { parent.status = "Waiting for you to sign in" }
+            #if DEBUG
+            if !done, let script = Self.fillScript() { webView.evaluateJavaScript(script) }
+            #endif
             check(webView)
         }
+
+        #if DEBUG
+        /// Development only: `BRAZIER_SHOT_FILL="user:password"` types into Grafana's own form and submits it;
+        /// `BRAZIER_SHOT_GATE_FILL="user:password"` does the same on an Authelia portal in front of Grafana.
+        /// Lets a headless build host drive the page sign-in end to end. Never in a release build.
+        static func fillScript() -> String? {
+            let env = ProcessInfo.processInfo.environment
+            func pair(_ key: String) -> (String, String)? {
+                guard let raw = env[key], !raw.isEmpty, let i = raw.firstIndex(of: ":") else { return nil }
+                return (String(raw[..<i]), String(raw[raw.index(after: i)...]))
+            }
+            let grafana = pair("BRAZIER_SHOT_FILL")
+            let gate = pair("BRAZIER_SHOT_GATE_FILL")
+            guard grafana != nil || gate != nil else { return nil }
+            func literal(_ value: String?) -> String {
+                guard let value, let data = try? JSONSerialization.data(withJSONObject: value, options: .fragmentsAllowed),
+                      let text = String(data: data, encoding: .utf8) else { return "null" }
+                return text
+            }
+            return """
+            (function () {
+              var G = \(literal(grafana?.0)), GP = \(literal(grafana?.1)), A = \(literal(gate?.0)), AP = \(literal(gate?.1));
+              function set(el, v) {
+                var d = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+                d.set.call(el, v);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+                el.dispatchEvent(new Event('change', { bubbles: true }));
+              }
+              if (window.__brazierFill) return;
+              var tries = 0;
+              window.__brazierFill = setInterval(function () {
+                if (++tries > 40) { clearInterval(window.__brazierFill); return; }
+                var au = document.querySelector('#username-textfield'), ap = document.querySelector('#password-textfield');
+                if (A && au && ap) {
+                  set(au, A); set(ap, AP);
+                  var b = document.querySelector('#sign-in-button');
+                  clearInterval(window.__brazierFill);
+                  if (b) b.click();
+                  return;
+                }
+                var gu = document.querySelector('input[name="user"]'), gp = document.querySelector('input[name="password"]');
+                if (G && gu && gp) {
+                  set(gu, G); set(gp, GP);
+                  clearInterval(window.__brazierFill);
+                  var f = gu.form, s = f && f.querySelector('button[type="submit"]');
+                  if (s) s.click(); else if (f) f.requestSubmit();
+                }
+              }, 250);
+            })();
+            """
+        }
+        #endif
 
         func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { report(error) }
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { report(error) }

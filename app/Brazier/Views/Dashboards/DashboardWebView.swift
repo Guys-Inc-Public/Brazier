@@ -11,6 +11,9 @@ import WebKit
 ///     the page runs: every same-origin request the page makes then carries the same header.
 ///     An ID token that lapses while a dashboard stays open makes the page's requests 401 until the
 ///     dashboard is reopened; the app refreshes the token on the next open.
+///   · A session the page rotates (Grafana does, every ten minutes of use) is read back into the
+///     keychain after each load, once a minute, and when the page goes away.
+///   · A visitor's page starts with no Grafana session for the host, whatever an earlier sign-in left.
 struct DashboardWebView: View {
     @Environment(AppModel.self) private var model
     let hit: SearchHit
@@ -21,6 +24,8 @@ struct DashboardWebView: View {
         var request: URLRequest
         var cookies: [HTTPCookie] = []
         var script: WKUserScript?
+        /// A visitor's page: any Grafana session left in the web view's store for this host is removed first.
+        var clearsSession = false
     }
 
     var body: some View {
@@ -34,7 +39,7 @@ struct DashboardWebView: View {
                 .padding(Brand.Space.card)
                 .frame(maxHeight: .infinity, alignment: .top)
             } else if let page {
-                WebPage(page: page) { fault = $0 }
+                WebPage(page: page, onFailure: { fault = $0 }, onCookies: { cookies in Task { await keep(cookies) } })
             } else {
                 WarmingBay(name: hit.title)
             }
@@ -67,11 +72,21 @@ struct DashboardWebView: View {
                     page = Page(request: signed)
                 }
             case .none:
-                page = Page(request: request)
+                page = Page(request: request, clearsSession: true)
             }
         } catch {
             fault = error.localizedDescription
         }
+    }
+
+    /// Grafana rotates the session cookie every ten minutes of use, inside the page as much as in the
+    /// API; whatever the page ends up holding goes back to the keychain so the next API call is signed in.
+    private func keep(_ cookies: [HTTPCookie]) async {
+        guard let server = model.selectedServer, server.isSession, let host = server.url.host?.lowercased() else { return }
+        let mine = cookies.filter { $0.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) == host }
+        guard let session = mine.first(where: { $0.name == "grafana_session" }), !session.value.isEmpty else { return }
+        let expiry = mine.first { $0.name == "grafana_session_expiry" }?.value
+        await model.credentials.rotateSession(cookie: session.value, expiry: expiry, for: server)
     }
 
     /// The stored Cookie header as cookies for the host: every pair, Grafana's and any gate's.
@@ -137,8 +152,11 @@ struct DashboardWebView: View {
 private struct WebPage: UIViewRepresentable {
     let page: DashboardWebView.Page
     let onFailure: (String) -> Void
+    /// The store's cookies as the page left them: after each load, once a minute while it stays open,
+    /// and when the view goes away.
+    let onCookies: ([HTTPCookie]) -> Void
 
-    func makeCoordinator() -> Coordinator { Coordinator(onFailure: onFailure) }
+    func makeCoordinator() -> Coordinator { Coordinator(onFailure: onFailure, onCookies: onCookies) }
 
     func makeUIView(context: Context) -> WKWebView {
         let configuration = WKWebViewConfiguration()
@@ -149,28 +167,73 @@ private struct WebPage: UIViewRepresentable {
         view.isOpaque = false
         view.backgroundColor = UIColor(Brand.Tone.ink)
         view.scrollView.backgroundColor = UIColor(Brand.Tone.ink)
-        if page.cookies.isEmpty {
-            view.load(page.request)
+        let store = configuration.websiteDataStore.httpCookieStore
+        let request = page.request
+        let host = request.url?.host?.lowercased() ?? ""
+        if page.clearsSession {
+            // A visitor: whatever session an earlier sign-in left for this host must not sign the page in.
+            store.getAllCookies { cookies in
+                let stale = cookies.filter { $0.name.hasPrefix("grafana_session") && $0.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: ".")) == host }
+                let pending = DispatchGroup()
+                for cookie in stale {
+                    pending.enter()
+                    store.delete(cookie) { pending.leave() }
+                }
+                pending.notify(queue: .main) { view.load(request) }
+            }
+        } else if page.cookies.isEmpty {
+            view.load(request)
         } else {
             // Every cookie is in the store before the first request leaves.
-            let store = configuration.websiteDataStore.httpCookieStore
             let pending = DispatchGroup()
             for cookie in page.cookies {
                 pending.enter()
                 store.setCookie(cookie) { pending.leave() }
             }
-            let request = page.request
             pending.notify(queue: .main) { view.load(request) }
         }
+        context.coordinator.watch(view)
         return view
     }
 
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        coordinator.stop()
+        coordinator.readCookies(from: uiView)
+    }
+
     final class Coordinator: NSObject, WKNavigationDelegate {
         let onFailure: (String) -> Void
+        let onCookies: ([HTTPCookie]) -> Void
+        private var timer: Timer?
 
-        init(onFailure: @escaping (String) -> Void) { self.onFailure = onFailure }
+        init(onFailure: @escaping (String) -> Void, onCookies: @escaping ([HTTPCookie]) -> Void) {
+            self.onFailure = onFailure
+            self.onCookies = onCookies
+        }
+
+        func watch(_ webView: WKWebView) {
+            timer?.invalidate()
+            timer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self, weak webView] _ in
+                guard let self, let webView else { return }
+                self.readCookies(from: webView)
+            }
+        }
+
+        func stop() {
+            timer?.invalidate()
+            timer = nil
+        }
+
+        func readCookies(from webView: WKWebView) {
+            let handler = onCookies
+            webView.configuration.websiteDataStore.httpCookieStore.getAllCookies { handler($0) }
+        }
+
+        func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
+            readCookies(from: webView)
+        }
 
         func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
             report(error)

@@ -58,7 +58,7 @@ npx wrangler secret put PUSH_GRANT_KEY          # the relayKey
 npx wrangler deploy
 ```
 
-`GET /health` now says `push: grant`. The relay asks the grant for a token when it has none or when the kept one (`grant/token` in KV) is five minutes from lapsing, at most once a minute, and sends every push to Apple itself with it. If the grant is down or refuses the key, the webhook is still accepted and each send counts as `failed`; the devices stay.
+`GET /health` now says `push: grant`. The relay asks the grant for a token when it has none or when the kept one (`grant/token` in KV) is five minutes from lapsing, at most once a minute, and sends every push to Apple itself with it. This path was walked on 2026-09-29 exactly as written above, by a second relay with no key of its own: Apple accepted its granted token on the first push. If the grant is down or refuses the key, the webhook is still accepted and each send counts as `failed`; the devices stay.
 
 ## Routes
 

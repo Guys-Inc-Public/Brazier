@@ -48,6 +48,19 @@ describe("the front door", () => {
     expect(res.headers.get("set-cookie")).toContain("grafana_session=abc");
   });
 
+  it("serves the discovery document on the demo hostname only; another name passes through with its own host", async () => {
+    answer = () => new Response("Not found", { status: 404 });
+    const other = await worker.fetch(new Request("https://demo-txt.brazier.gicloud.org/.well-known/brazier"), env);
+    expect(other.status).toBe(404);
+    expect(calls[0].url).toBe("http://198.51.100.7:3011/.well-known/brazier");
+    const h = new Headers(calls[0].init?.headers);
+    expect(h.get("x-forwarded-host")).toBe("demo-txt.brazier.gicloud.org");
+    expect(h.get("x-demo-key")).toBe("k-secret");
+    const fronted = await worker.fetch(new Request("https://fronted.brazier.gicloud.org/api/health"), env);
+    expect(fronted.status).toBe(404);
+    expect(new Headers(calls[1].init?.headers).get("x-forwarded-host")).toBe("fronted.brazier.gicloud.org");
+  });
+
   it("hands Grafana's redirects to the caller unchanged", async () => {
     answer = () => new Response(null, { status: 302, headers: { location: "https://demo.brazier.gicloud.org/login" } });
     const res = await worker.fetch(req("/"), env);

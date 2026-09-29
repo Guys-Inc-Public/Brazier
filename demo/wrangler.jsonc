@@ -14,5 +14,11 @@
     "RELAY_URL": "https://brazier.gicloud.org"
   },
   // Secret, set with `wrangler secret put`: DEMO_KEY
-  "routes": [{ "pattern": "demo.brazier.gicloud.org", "custom_domain": true }]
+  // Three names, one Worker: the gate on the box routes by x-forwarded-host. fronted.* is the Grafana
+  // behind an Authelia sign-in gate; demo-txt.* is the demo again, found through a DNS TXT signpost only.
+  "routes": [
+    { "pattern": "demo.brazier.gicloud.org", "custom_domain": true },
+    { "pattern": "fronted.brazier.gicloud.org", "custom_domain": true },
+    { "pattern": "demo-txt.brazier.gicloud.org", "custom_domain": true }
+  ]
 }

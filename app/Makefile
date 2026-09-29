@@ -12,7 +12,9 @@ BUNDLE_ID := org.guysinc.brazier
 SHOT      ?= /Users/Shared/brazier/app-screenshot.png
 # Optional, DEBUG builds only: mount a server at launch (see AppModel.seedFromEnvironment): a token, a
 # username and password, or SEED_ANONYMOUS=1 for a Grafana that lets visitors read. SHOT_MODE is the
-# BRAZIER_SHOT screen hook (notifications|dashboards|dashboard|tiles|silence|silences, or a walkthrough step).
+# BRAZIER_SHOT screen hook (notifications|dashboards|dashboard|tiles|silence|silences|server-detail, or a walkthrough
+# step: server|signin|signedin|web|notifications|done with SHOT_URL); SHOT_FILL / SHOT_GATE_FILL = "user:password" typed into
+# Grafana's page / an Authelia portal by the web step.
 SEED_URL  ?=
 SEED_TOKEN ?=
 SEED_NAME ?=
@@ -24,6 +26,8 @@ SHOT_MODE ?=
 SHOT_ORG ?=
 SHOT_DASHBOARD ?=
 SHOT_URL ?=
+SHOT_FILL ?=
+SHOT_GATE_FILL ?=
 SHOT_WAIT ?= 6
 
 # App Store Connect API key (Admin), under the claude user. Cloud signing, no .p12 on the Mac.
@@ -69,7 +73,7 @@ launch-sim:
 	xcrun simctl install $(SIM_UDID) "$(DERIVED)/Build/Products/Debug-iphonesimulator/Brazier.app"
 	SIMCTL_CHILD_BRAZIER_SEED_URL="$(SEED_URL)" SIMCTL_CHILD_BRAZIER_SEED_TOKEN="$(SEED_TOKEN)" SIMCTL_CHILD_BRAZIER_SEED_NAME="$(SEED_NAME)" \
 	SIMCTL_CHILD_BRAZIER_SEED_USER="$(SEED_USER)" SIMCTL_CHILD_BRAZIER_SEED_PASSWORD="$(SEED_PASSWORD)" SIMCTL_CHILD_BRAZIER_SEED_ANONYMOUS="$(SEED_ANONYMOUS)" SIMCTL_CHILD_BRAZIER_SEED_RELAY="$(SEED_RELAY)" \
-	SIMCTL_CHILD_BRAZIER_SHOT="$(SHOT_MODE)" SIMCTL_CHILD_BRAZIER_SHOT_ORG="$(SHOT_ORG)" SIMCTL_CHILD_BRAZIER_SHOT_DASHBOARD="$(SHOT_DASHBOARD)" SIMCTL_CHILD_BRAZIER_SHOT_URL="$(SHOT_URL)" \
+	SIMCTL_CHILD_BRAZIER_SHOT="$(SHOT_MODE)" SIMCTL_CHILD_BRAZIER_SHOT_ORG="$(SHOT_ORG)" SIMCTL_CHILD_BRAZIER_SHOT_DASHBOARD="$(SHOT_DASHBOARD)" SIMCTL_CHILD_BRAZIER_SHOT_URL="$(SHOT_URL)" SIMCTL_CHILD_BRAZIER_SHOT_FILL="$(SHOT_FILL)" SIMCTL_CHILD_BRAZIER_SHOT_GATE_FILL="$(SHOT_GATE_FILL)" \
 	xcrun simctl launch $(SIM_UDID) $(BUNDLE_ID)
 	sleep $(SHOT_WAIT)
 	xcrun simctl io $(SIM_UDID) screenshot "$(SHOT)"
