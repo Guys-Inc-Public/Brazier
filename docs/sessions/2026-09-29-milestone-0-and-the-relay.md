@@ -17,6 +17,7 @@ Start the build from the guide: verify the two Grafana assumptions, create the i
 - Apple App ID `org.guysinc.brazier` (WFDZ9J88XU) registered with Push Notifications through the App Store Connect API.
 - Relay under `relay/`: one Worker, one KV namespace, HMAC over `timestamp:body` verified against a real Grafana capture, device registry keyed by lower-case username, label routing, 7-day dedupe, APNs with provider tokens, 410 drops the device. 19 tests in the Workers runtime, in CI. Deployed to `brazier.gicloud.org` with the webhook secret; a Blackbox probe watches `/health`.
 - App under `app/`: 3,034 lines of Swift, xcodegen project, Servers, Auth, GrafanaClient, Alerts, Push, Settings, a Dashboards stub, the brand's tones and fonts, the Curl. Builds for the simulator with zero warnings and lists the estate's alerts.
+- Grafana contact point `brazier` (webhook, HMAC, resolved messages on) provisioned in org 1 and the org's root policy moved to it, loaded with the provisioning reload API, no restart. A temporary rule fired through it: the relay's log shows the signed webhooks verified, parsed and routed, with APNs reported unconfigured.
 - `docs/reference/identifiers.md` and `relay.md` carry every id created tonight.
 
 ## What was learned
@@ -29,6 +30,6 @@ Start the build from the guide: verify the two Grafana assumptions, create the i
 
 ## Open
 - CJ: APNs key (.p8) into the relay (`wrangler secret put APNS_KEY`, `APNS_KEY_ID` in wrangler.jsonc), the App Store Connect app record, Daniel as internal tester, Branding-Standards PR #19 and #20.
-- Grafana contact point `brazier` and the policy root, after the Grafana organisation split lands in the same compose file.
+- Grafana orgs 2, 3 and 4 (Guys Inc Public, Personal, Meade Manor) still notify in-app only; copy the `brazier` receiver per org when CJ wants their alerts on the phone.
 - First real push: register a phone, force an alert, silence it from the phone.
 - Milestone 3: dashboards web view session carry-over, uptime tiles, iPad.
