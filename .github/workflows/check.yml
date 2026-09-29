@@ -1,8 +1,21 @@
 name: check
 on: [push, pull_request]
 jobs:
-  check:
+  docs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - run: python3 scripts/check.py
+  relay:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: relay
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --legacy-peer-deps --no-fund --no-audit
+      - run: npm run check
+      - run: npm test

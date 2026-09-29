@@ -1,0 +1,21 @@
+{
+  "name": "brazier-relay",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Push relay for Brazier: Grafana webhook in, APNs out. One Worker, one KV namespace.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.143.0"
+  }
+}
