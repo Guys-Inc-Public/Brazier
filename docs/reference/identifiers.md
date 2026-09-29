@@ -21,7 +21,7 @@ Decided 2026-09-28. Change here first, then everywhere the row names.
 | Apple team | 7VM43528YK | signing, APNs provider token |
 | Apple App ID | `org.guysinc.brazier`, id WFDZ9J88XU, universal, Push Notifications on | registered 2026-09-28 through the App Store Connect API |
 | App Store Connect API key | 9258LNDGUM (Admin), on the Mac mini under the claude user | fastlane upload |
-| APNs key | to be created by CJ in the developer portal (Keys, Apple Push Notifications service); id recorded here when it exists | relay var `APNS_KEY_ID`, secret `APNS_KEY` |
+| APNs key | id `S422GAVQ85`, created 2026-09-29; the .p8 is at `/root/.config/brazier/` on mitochondria and beside the App Store Connect key on the Mac mini (claude user), both mode 600 | relay var `APNS_KEY_ID`, secret `APNS_KEY` (loaded 2026-09-29) |
 | Grafana JWT auth | header `X-JWT-Assertion`, JWKS = the Keystone app above, expect_claims iss + aud, lookup by email, auto sign-up off | `/opt/monitoring/docker-compose.yml`, grafana service, since 2026-09-28 |
 | Grafana contact point | `brazier`, webhook `https://brazier.gicloud.org/grafana`, HMAC secret `BRAZIER_WEBHOOK_SECRET` from `/opt/monitoring/.env` | `grafana/provisioning/alerting/contact-points.yml` |
 | Layout | `relay/` Worker (TypeScript) · `app/` Xcode project `Brazier.xcodeproj` · `docs/` · `assets/brand/` · `design/` | |
