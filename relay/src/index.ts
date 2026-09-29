@@ -1,5 +1,6 @@
 /** Brazier relay: Grafana's webhook in, Apple's push out. Routes:
- *    POST   /grafana           HMAC-signed webhook from a Grafana contact point
+ *    POST   /grafana           webhook from a Grafana contact point: HMAC-signed (Grafana 11+), or
+ *                              HTTP Basic with the shared secret as the password (older Grafanas)
  *    POST   /devices           register this device; the caller proves who they are with the same
  *                              credential the app uses for Grafana (headers, see identity.ts)
  *    GET    /devices           the caller's devices
@@ -10,7 +11,7 @@
  *                              Worker route, so the app finds everything from the Grafana address alone.
  */
 import { type Env, VERSION, json, apnsConfigured } from "./env";
-import { verifyGrafanaSignature } from "./hmac";
+import { verifyGrafanaSignature, verifyBasicSecret } from "./hmac";
 import { parseWebhook, deliver } from "./notify";
 import { listDevices, normaliseToken, putDevice, removeDevice, type Device } from "./devices";
 import { allowedOrigins, readCredential, whoAmI, type GrafanaUser } from "./identity";
@@ -40,8 +41,10 @@ async function caller(req: Request, env: Env): Promise<GrafanaUser | Response> {
 async function handleGrafana(req: Request, env: Env): Promise<Response> {
   if (!env.WEBHOOK_SECRET) return json({ error: "relay has no WEBHOOK_SECRET" }, 503);
   const body = new Uint8Array(await req.arrayBuffer());
-  const ok = await verifyGrafanaSignature(env.WEBHOOK_SECRET, body, req.headers.get(SIGNATURE_HEADER), req.headers.get(TIMESTAMP_HEADER));
-  if (!ok) return json({ error: "bad signature" }, 401);
+  const signed = req.headers.has(SIGNATURE_HEADER)
+    ? await verifyGrafanaSignature(env.WEBHOOK_SECRET, body, req.headers.get(SIGNATURE_HEADER), req.headers.get(TIMESTAMP_HEADER))
+    : verifyBasicSecret(env.WEBHOOK_SECRET, req.headers.get("authorization"));
+  if (!signed) return json({ error: "bad signature" }, 401);
   let wh;
   try {
     wh = parseWebhook(new TextDecoder().decode(body));

@@ -21,7 +21,8 @@ const realFetch = globalThis.fetch;
 /** The credentials the stub Grafana at GRAFANA accepts, and who they belong to. */
 const KNOWN: Record<string, { login: string; email: string; name: string }> = {
   "bearer:glsa_cj": { login: "cjackson@guysinc.org", email: "cjackson@guysinc.org", name: "Cameron Jackson" },
-  "cookie:sess-cj": { login: "cjackson@guysinc.org", email: "cjackson@guysinc.org", name: "Cameron Jackson" },
+  "cookie:grafana_session=sess-cj": { login: "cjackson@guysinc.org", email: "cjackson@guysinc.org", name: "Cameron Jackson" },
+  "cookie:CF_Authorization=proxy-jwt; grafana_session=sess-cj": { login: "cjackson@guysinc.org", email: "cjackson@guysinc.org", name: "Cameron Jackson" },
   "jwt:id-token-cj": { login: "cjackson@guysinc.org", email: "cjackson@guysinc.org", name: "Cameron Jackson" },
   "bearer:glsa_dm": { login: "dmeade", email: "dmeade@damp.meme", name: "Daniel Meade" },
 };
@@ -34,7 +35,7 @@ function stubGrafana(origin = GRAFANA) {
       const auth = req.headers.get("authorization");
       const cookie = req.headers.get("cookie");
       const jwt = req.headers.get("x-jwt-assertion");
-      const key = auth ? `bearer:${auth.replace(/^Bearer /, "")}` : cookie ? `cookie:${cookie.replace(/^grafana_session=/, "")}` : jwt ? `jwt:${jwt}` : "";
+      const key = auth ? `bearer:${auth.replace(/^Bearer /, "")}` : cookie ? `cookie:${cookie}` : jwt ? `jwt:${jwt}` : "";
       const who = KNOWN[key];
       return who ? Response.json(who) : Response.json({ message: "Unauthorized" }, { status: 401 });
     },
@@ -65,7 +66,7 @@ const DM: Cred = { bearer: "glsa_dm" };
 function credHeaders(cred: Cred, origin = GRAFANA): Record<string, string> {
   const h: Record<string, string> = { "x-grafana-url": origin };
   if ("bearer" in cred) h.authorization = `Bearer ${cred.bearer}`;
-  else if ("cookie" in cred) h.cookie = `grafana_session=${cred.cookie}`;
+  else if ("cookie" in cred) h.cookie = cred.cookie;
   else h["x-jwt-assertion"] = cred.jwt;
   return h;
 }
@@ -210,6 +211,16 @@ describe("POST /grafana signature", () => {
     expect(await res.json()).toMatchObject({ received: 1 });
   });
 
+  it("accepts HTTP Basic with the secret as the password, for Grafanas too old to sign", async () => {
+    const body = JSON.stringify(grafanaWebhook([{}]));
+    const good = await call(new Request("https://relay.test/grafana", { method: "POST", headers: { authorization: `Basic ${btoa(`brazier:${SECRET}`)}` }, body }));
+    expect(good.status).toBe(200);
+    const bad = await call(new Request("https://relay.test/grafana", { method: "POST", headers: { authorization: `Basic ${btoa("brazier:wrong")}` }, body }));
+    expect(bad.status).toBe(401);
+    const empty = await call(new Request("https://relay.test/grafana", { method: "POST", headers: { authorization: "Basic " + btoa("brazier:") }, body }));
+    expect(empty.status).toBe(401);
+  });
+
   it("accepts a signature without a timestamp header (HMAC over the body alone)", async () => {
     const res = await signedWebhook(grafanaWebhook([{}]), { timestamp: null });
     expect(res.status).toBe(200);
@@ -236,7 +247,9 @@ describe("devices", () => {
     expect(await reg.json()).toMatchObject({ ok: true, user: "cjackson@guysinc.org", devices: 1 });
 
     // idempotent, and the same person through a session cookie or an OIDC token is the same user
-    await register(TOKEN_A, { cookie: "sess-cj" });
+    await register(TOKEN_A, { cookie: "grafana_session=sess-cj" });
+    // an auth proxy's cookie travels with Grafana's, untouched
+    expect((await register(TOKEN_A, { cookie: "CF_Authorization=proxy-jwt; grafana_session=sess-cj" })).status).toBe(200);
     await register(TOKEN_A, { jwt: "id-token-cj" });
     const list = (await (await call(new Request("https://relay.test/devices", { headers: credHeaders(CJ) }))).json()) as { devices: unknown[] };
     expect(list.devices).toHaveLength(1);
@@ -254,7 +267,7 @@ describe("devices", () => {
 
   it("rejects a credential Grafana does not know, and a call with no or two credentials", async () => {
     expect((await register(TOKEN_A, { bearer: "glsa_nope" })).status).toBe(401);
-    expect((await register(TOKEN_A, { cookie: "stale" })).status).toBe(401);
+    expect((await register(TOKEN_A, { cookie: "grafana_session=stale" })).status).toBe(401);
     const none = await call(new Request("https://relay.test/devices", { method: "POST", headers: { "x-grafana-url": GRAFANA, "content-type": "application/json" }, body: "{}" }));
     expect(none.status).toBe(401);
     const two = await call(new Request("https://relay.test/devices", { method: "POST", headers: { ...credHeaders(CJ), cookie: "grafana_session=sess-cj", "content-type": "application/json" }, body: "{}" }));

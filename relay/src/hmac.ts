@@ -48,3 +48,23 @@ export async function signLikeGrafana(secret: string, body: Uint8Array, timestam
   const content = timestamp ? concat(enc.encode(`${timestamp}:`), body) : body;
   return hmacHex(secret, content);
 }
+
+/** Grafana before 11 cannot sign webhooks. Its contact point can still send HTTP Basic auth; the password
+ *  is the shared secret (the username is free). Constant-time on the secret. */
+export function verifyBasicSecret(secret: string, authorization: string | null): boolean {
+  if (!authorization) return false;
+  const m = /^Basic\s+([A-Za-z0-9+/=]+)$/i.exec(authorization.trim());
+  if (!m) return false;
+  let decoded: string;
+  try {
+    decoded = atob(m[1]);
+  } catch {
+    return false;
+  }
+  const colon = decoded.indexOf(":");
+  const password = colon < 0 ? decoded : decoded.slice(colon + 1);
+  const a = enc.encode(password);
+  const b = enc.encode(secret);
+  if (a.length !== b.length || a.length === 0) return false;
+  return crypto.subtle.timingSafeEqual(a, b);
+}

@@ -9,8 +9,8 @@ Brazier app ──its Grafana credential──▶ POST /devices ──▶ that G
 
 | Route | Auth | Does |
 |---|---|---|
-| `POST /grafana` | `X-Grafana-Alerting-Signature`: HMAC-SHA256 hex over `<timestamp>:<body>` (or the body alone without a timestamp header), constant-time compare | Per alert: skip if already sent for this fingerprint, status and start time; route the labels to users; push to each of their devices; forget devices Apple reports gone |
-| `POST /devices` | Headers `X-Grafana-Url: <origin>` and exactly one of `Authorization: Bearer <service account token>`, `Cookie: grafana_session=<value>`, `X-JWT-Assertion: <OIDC token>`: the same credential the app uses for Grafana. The relay asks that Grafana `/api/user` who it is; the origin must be on `GRAFANA_URLS` | Body `{ "token": "<APNs hex>", "platform": "ios", "environment": "production" \| "sandbox", "name": "…" }`. Idempotent. Devices are filed under the Grafana login, with the email as an alias |
+| `POST /grafana` | `X-Grafana-Alerting-Signature`: HMAC-SHA256 hex over `<timestamp>:<body>` (or the body alone without a timestamp header), constant-time compare; or HTTP Basic with `WEBHOOK_SECRET` as the password for Grafanas too old to sign | Per alert: skip if already sent for this fingerprint, status and start time; route the labels to users; push to each of their devices; forget devices Apple reports gone |
+| `POST /devices` | Headers `X-Grafana-Url: <origin>` and exactly one of `Authorization: Bearer <service account token>`, `Cookie: <the cookies for that host>`, `X-JWT-Assertion: <OIDC token>`: the same credential the app uses for Grafana. The relay asks that Grafana `/api/user` who it is; the origin must be on `GRAFANA_URLS` | Body `{ "token": "<APNs hex>", "platform": "ios", "environment": "production" \| "sandbox", "name": "…" }`. Idempotent. Devices are filed under the Grafana login, with the email as an alias |
 | `GET /devices` | same | The caller's devices, tokens elided |
 | `DELETE /devices/:token` | same | Forget one device |
 | `GET /health` | none | `{ ok, version, kv, apns, webhook, grafana }` |
@@ -32,7 +32,7 @@ The document says: `{ "relay": { "url", "version" }, "grafana": { "<origin>": { 
 2. Set the vars: `GRAFANA_URLS` (your Grafana's origin; the relay refuses to talk to any other), `RELAY_URL` (this relay's public address), `ROUTES` (see below), `APNS_TEAM_ID`, `APNS_TOPIC`, `APNS_KEY_ID`; and `SIGN_IN` if your Grafana signs in through an identity provider that needs a passkey or refuses in-app web views: `{"https://grafana.example.com":{"issuer":"<OIDC issuer>","clientId":"<public PKCE client for the app, redirect brazier://auth/callback>","name":"<what the button says>"}}`, with Grafana's `[auth.jwt]` pointed at that provider. The app then signs in through the system sheet and hands Grafana the ID token.
 3. `wrangler secret put WEBHOOK_SECRET` (any random string; the same value goes on the Grafana contact point) and `wrangler secret put APNS_KEY < AuthKey_XXXX.p8`.
 4. `npm install && npm test && npm run deploy`.
-5. In Grafana: a webhook contact point at `https://<relay>/grafana` with **HMAC signature** on, secret = `WEBHOOK_SECRET`, header `X-Grafana-Alerting-Signature`, timestamp header `X-Grafana-Alerting-Timestamp`. Point a notification policy at it.
+5. In Grafana: a webhook contact point at `https://<relay>/grafana` with **HMAC signature** on, secret = `WEBHOOK_SECRET`, header `X-Grafana-Alerting-Signature`, timestamp header `X-Grafana-Alerting-Timestamp`; on a Grafana older than 11, use the contact point's Basic auth instead with any username and `WEBHOOK_SECRET` as the password. Point a notification policy at it.
 
 The APNs key belongs to the Apple developer account that ships the app. Until the push-grant service exists (milestone 4 in the build guide), a self-hosted relay needs its own build of the app under its own bundle id.
 

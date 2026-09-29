@@ -46,9 +46,11 @@ export function readCredential(req: Request): { origin: string; credential: Cred
   const cookie = req.headers.get("cookie");
   const jwt = req.headers.get("x-jwt-assertion");
   const bearer = auth ? /^Bearer\s+(.+)$/i.exec(auth)?.[1]?.trim() : undefined;
-  const session = cookie ? /(?:^|;\s*)grafana_session=([^;]+)/.exec(cookie)?.[1] : undefined;
+  // Forward every cookie the app holds for that host, not only grafana_session: an auth proxy in front of
+  // Grafana (Authelia, oauth2-proxy, Cloudflare Access) keeps its own.
+  const session = cookie && cookie.trim() ? cookie.trim() : undefined;
   const given = [bearer && { kind: "bearer" as const, value: bearer }, session && { kind: "cookie" as const, value: session }, jwt && { kind: "jwt" as const, value: jwt.trim() }].filter(Boolean) as Credential[];
-  if (given.length !== 1) return { error: "exactly one of Authorization: Bearer, Cookie: grafana_session or X-JWT-Assertion is required" };
+  if (given.length !== 1) return { error: "exactly one of Authorization: Bearer, Cookie or X-JWT-Assertion is required" };
   return { origin, credential: given[0] };
 }
 
@@ -56,7 +58,7 @@ export function readCredential(req: Request): { origin: string; credential: Cred
 export async function whoAmI(origin: string, credential: Credential): Promise<GrafanaUser> {
   const headers: Record<string, string> = { accept: "application/json", "user-agent": "brazier-relay" };
   if (credential.kind === "bearer") headers.authorization = `Bearer ${credential.value}`;
-  else if (credential.kind === "cookie") headers.cookie = `grafana_session=${credential.value}`;
+  else if (credential.kind === "cookie") headers.cookie = credential.value;
   else headers["x-jwt-assertion"] = credential.value;
   let res: Response;
   try {
