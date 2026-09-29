@@ -21,7 +21,20 @@ ASC_KEY_ID   := 9258LNDGUM
 ASC_ISSUER   := f98b49e4-67e6-4f4b-84a6-864b64b6b03e
 ASC_AUTH     := -allowProvisioningUpdates -authenticationKeyPath $(ASC_KEY_PATH) -authenticationKeyID $(ASC_KEY_ID) -authenticationKeyIssuerID $(ASC_ISSUER)
 
-.PHONY: generate build-sim run-sim archive upload clean
+# The build user's own keychain (login.keychain-db is unusable headless, see docs/mac-setup in Honeywick).
+# Signing needs it unlocked, and any key Xcode creates in it needs codesign on its access list, or
+# xcodebuild fails with "User interaction is not allowed".
+KEYCHAIN    := /Users/claude/Library/Keychains/claude.keychain-db
+KEYCHAIN_PW  = $(shell cat /Users/claude/.config/login.pw)
+
+.PHONY: generate build-sim run-sim unlock grant-keys archive upload clean
+
+unlock:
+	@security unlock-keychain -p "$(KEYCHAIN_PW)" $(KEYCHAIN)
+	@security set-keychain-settings $(KEYCHAIN)
+
+grant-keys:
+	@security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$(KEYCHAIN_PW)" $(KEYCHAIN) >/dev/null 2>&1 || true
 
 generate:
 	xcodegen generate --spec project.yml --quiet
@@ -42,15 +55,18 @@ run-sim: build-sim
 	xcrun simctl io $(SIM_UDID) screenshot "$(SHOT)"
 	@echo "screenshot: $(SHOT)"
 
-# Archive for the store. Fails until CJ creates the Brazier app record in App Store Connect
-# (bundle id org.guysinc.brazier is registered; the record is not).
-archive: generate
+# Archive for the store (the app record exists since 2026-09-29).
+# The first run may create a development certificate and key; the retry grants codesign access to it.
+archive: generate unlock grant-keys
 	set -o pipefail; xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
 	  -destination "generic/platform=iOS" -archivePath "$(DERIVED)/Brazier.xcarchive" \
-	  $(ASC_AUTH) archive | xcbeautify
+	  $(ASC_AUTH) archive | xcbeautify \
+	|| { $(MAKE) grant-keys; set -o pipefail; xcodebuild -project $(PROJECT) -scheme $(SCHEME) -configuration Release \
+	  -destination "generic/platform=iOS" -archivePath "$(DERIVED)/Brazier.xcarchive" \
+	  $(ASC_AUTH) archive | xcbeautify; }
 
-# Upload the archive to TestFlight with the API key. Same precondition as archive.
-upload:
+# Upload the archive to TestFlight with the API key; distribution signing is cloud-managed.
+upload: unlock grant-keys
 	xcodebuild -exportArchive -archivePath "$(DERIVED)/Brazier.xcarchive" \
 	  -exportOptionsPlist ExportOptions.plist -exportPath "$(DERIVED)/export" $(ASC_AUTH)
 
