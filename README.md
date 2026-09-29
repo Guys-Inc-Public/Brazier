@@ -25,7 +25,7 @@ There is no app yet. The repository holds the study, the architecture, the decis
 |---|---|
 | `docs/brief/` | The project brief: done looks like, who for, constraints, out of scope |
 | `docs/concepts/` | Architecture: the app, the relay, Keystone, Grafana, as boards with parts and connections tables |
-| `docs/decisions/` | Decision records: thin native client, self-hosted relay first, Keystone JWT sign-in |
+| `docs/decisions/` | Decision records: thin native client, self-hosted relay first, Keystone JWT sign-in (advanced), sign-in through your Grafana's own login and the relay asking it who you are |
 | `docs/reference/` | The relay's routes, settings and payload mapping |
 | `docs/diagrams/` | Board specs (`*.board.json`) and their rendered SVGs |
 | `docs/sessions/` | Session records |

@@ -100,8 +100,9 @@
       "col": 1,
       "row": 1,
       "facts": [
-        "devices/<user>: tokens",
-        "sent/<fingerprint>: state, ttl 7d"
+        "devices/<login>: tokens",
+        "alias/<email> → login",
+        "sent/<fingerprint>: ttl 7d"
       ]
     },
     {
@@ -139,8 +140,8 @@
       "col": 3,
       "row": 1,
       "facts": [
-        "bearer: Keystone JWT",
-        "sub → user, token → device",
+        "the app's Grafana credential",
+        "Grafana's /api/user → login",
         "DELETE on sign-out"
       ]
     },
@@ -216,7 +217,7 @@
       "from": "phone",
       "to": "register",
       "label": "device token",
-      "carry": "HTTPS · JWT",
+      "carry": "HTTPS · Grafana credential",
       "state": "temporary",
       "fromSide": "top",
       "toSide": "bottom",

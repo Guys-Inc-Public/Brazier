@@ -79,8 +79,8 @@
       "kindLabel": "worker",
       "facts": [
         "/grafana  webhook in",
-        "/devices  register, unregister",
-        "routes by site label"
+        "/devices  asks Grafana who",
+        "routes by label"
       ],
       "ports": [
         {
@@ -136,9 +136,8 @@
       "row": 2,
       "kindLabel": "idp",
       "facts": [
-        "public client, PKCE",
-        "issues the JWT Grafana trusts",
-        "JWKS for Grafana"
+        "behind Grafana's login page",
+        "optional: OIDC for the advanced path"
       ]
     },
     {
@@ -151,7 +150,7 @@
       "row": 2,
       "kindLabel": "13.2.1",
       "facts": [
-        "auth.jwt → Keystone JWKS",
+        "login page: password or SSO",
         "alerting API, silences",
         "contact point: webhook"
       ],
@@ -190,8 +189,8 @@
     {
       "from": "app",
       "to": "keystone",
-      "label": "sign in",
-      "carry": "OIDC · PKCE",
+      "label": "sign in (SSO)",
+      "carry": "in Grafana's login page",
       "state": "temporary",
       "fromSide": "bottom",
       "toSide": "top",
@@ -202,8 +201,8 @@
       "to": "grafana",
       "fromPort": "api",
       "toPort": "api",
-      "label": "alerts, silences,\nsearch, health",
-      "carry": "HTTPS · X-JWT-Assertion",
+      "label": "sign in, alerts,\nsilences, search",
+      "carry": "HTTPS · session cookie",
       "volume": 2,
       "at": 0.22,
       "labelAt": 0.86
@@ -214,7 +213,7 @@
       "toPort": "reg",
       "fromSide": "right",
       "label": "device token",
-      "carry": "HTTPS · JWT",
+      "carry": "HTTPS · Grafana credential",
       "state": "temporary",
       "labelAt": 0.55
     },

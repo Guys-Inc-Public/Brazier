@@ -1,14 +1,14 @@
 ---
 type: concept
 owner: CJ
-reviewed: 2026-09-28
+reviewed: 2026-09-29
 review: each milestone
 ---
 
 # How the pieces fit
 
 ## In one paragraph
-The app on the phone signs in through Keystone with PKCE and calls Grafana's API with that JWT. Grafana's alerting posts firing and resolved alerts to the relay, a Cloudflare Worker, which looks up the site's owner's devices in KV and pushes through APNs. The app registers its device with the relay using the same Keystone JWT. Decisions: [0001](../decisions/0001-a-thin-native-client-over-grafanas-api.md), [0002](../decisions/0002-the-push-relay-is-self-hosted-first.md), [0003](../decisions/0003-sign-in-is-keystone-through-grafanas-jwt-auth.md).
+The app on the phone signs in on Grafana's own login page (Keystone behind it, for the estate) and calls Grafana's API with that session. Grafana's alerting posts firing and resolved alerts to the relay, a Cloudflare Worker, which verifies the signature, routes by label, and pushes through APNs. The app registers its device token with the relay using the same Grafana credential, and the relay asks that Grafana who it is (decision 0004).
 
 ## The system
 ![The app, the relay and what they talk to](../diagrams/system.svg)
@@ -17,16 +17,16 @@ The app on the phone signs in through Keystone with PKCE and calls Grafana's API
 |---|---|---|
 | The app | iPhone, SwiftUI, iOS 17+ | Servers, alerts, silences, dashboards in a web view, push registration |
 | Push relay | Cloudflare Worker, KV | Receives Grafana's webhook, routes by site label, pushes through APNs, keeps the device registry |
-| Keystone | OVH, keystone.gicloud.org | Public OIDC client for the app; the JWT Grafana trusts; the JWKS Grafana fetches |
-| Grafana | mitochondria, 13.2.1 | Alerting API, silences, search, dashboards; a webhook contact point; JWT auth |
+| Keystone | OVH, keystone.gicloud.org | The estate's single sign-on behind Grafana's login page; optional OIDC client for the advanced path |
+| Grafana | mitochondria, 13.2.1 | Login page, alerting API, silences, search, dashboards; a webhook contact point; JWT auth for the advanced path |
 | APNs | Apple | Delivers the push; needs a key from the developer account |
 
 | From → to | What travels | How |
 |---|---|---|
-| App → Keystone | sign in | OIDC authorization code with PKCE, public client, app URL scheme |
-| App → Grafana | alerts, silences, search, health | HTTPS through the tunnel, `X-JWT-Assertion` |
+| App → Grafana | sign in | Grafana's `/login` in a web view (password or SSO); the `grafana_session` cookie kept and renewed; or a service-account token; or, advanced, OIDC with PKCE and Grafana's JWT auth |
+| App → Grafana | alerts, silences, search, health | HTTPS through the tunnel with the session cookie, bearer token or `X-JWT-Assertion` |
 | Grafana → relay | firing, resolved | Webhook contact point, HMAC-SHA256 over the body |
-| App → relay | device token | HTTPS, bearer Keystone JWT |
+| App → relay | device token | HTTPS with the same Grafana credential in headers; the relay asks Grafana `/api/user` |
 | Relay → APNs | notification | HTTP/2, provider token auth, collapse-id = alert fingerprint |
 | Relay → KV | devices, dedupe | KV get and put, sent fingerprints expire after 7 days |
 
