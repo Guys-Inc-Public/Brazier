@@ -32,7 +32,13 @@ There is no app yet. The repository holds the study, the architecture, the decis
 | `docs/sessions/` | Session records |
 | `assets/brand/` | The mark (the Curl), icons and the pair with the Guys Inc symbol, from Branding-Standards |
 | `design/mark-rounds/` | Every mark considered before the Curl, with its generator |
+| `relay/` | The push relay: one Cloudflare Worker, one KV namespace; Grafana's webhook in, Apple's push out ([README](relay/README.md)) |
+| `grant/` | The push grant: lends a self-hosted relay a short-lived APNs token so our key never leaves us (decision 0005) |
+| `demo/` | The reviewer's demo Grafana: the stack on the OVH box and the Worker in front of it at demo.brazier.gicloud.org |
+| `contract/` | Every call the app and the relay make, run against real Grafana 11, 12 and 13 in Docker and in CI |
+| `app/` | The iPhone and iPad app: SwiftUI, xcodegen; `make` targets build, archive and upload from the Mac mini |
 | `scripts/check.py` | CI: front matter on every docs page, valid JSON boards |
+| `scripts/listing.mjs`, `scripts/screenshots.mjs`, `scripts/release.mjs` | The App Store listing filed from `docs/reference/listing.md`, the screenshots, the build attached to the version |
 | `scripts/site.py` | The docs site, built from this folder and published at <https://guys-inc-public.github.io/Brazier/> ([privacy](docs/privacy.md), [support](docs/support.md)) |
 
 ## Grafana

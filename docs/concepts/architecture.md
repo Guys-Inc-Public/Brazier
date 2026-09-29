@@ -30,6 +30,16 @@ The app on the phone signs in on Grafana's own login page (Keystone behind it, f
 | Relay → APNs | notification | HTTP/2, provider token auth, collapse-id = alert fingerprint |
 | Relay → KV | devices, dedupe | KV get and put, sent fingerprints expire after 7 days |
 
+## The push grant and the demo
+
+Two more Workers stand beside the relay since 2026-09-29. The push grant (`grant/`, decision 0005) holds
+Brazier's APNs key: a self-hosted relay registers by its public address, is checked for the discovery
+document a relay serves, gets a key, and asks for a fresh 50-minute provider token at most once a minute.
+Pushes still go from that relay straight to Apple; the grant never sees an alert. The demo (`demo/`) is
+a Grafana on synthetic data for Apple's reviewer and for anyone trying the app: a compose stack on the
+OVH box behind a gate that wants a key, and a Worker on `demo.brazier.gicloud.org` that forwards to it
+and answers the discovery document, so the address alone leads to the relay.
+
 ## The relay
 ![Inside the relay](../diagrams/relay.svg)
 
