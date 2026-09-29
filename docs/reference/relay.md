@@ -26,6 +26,8 @@ review: each release of the relay
 | `ROUTES` | JSON, label matcher → Grafana user or users (login or email), first match wins, `*` default; `label=value` or `label=~regex`; the estate's is `{"site=meade-manor":"dmeade@damp.meme","*":"cjackson@guysinc.org"}` | wrangler var |
 | KV namespace | one (`DEVICES`), 7-day TTL on `sent/*` | wrangler.jsonc binding |
 
+Grafana's own `DatasourceError` and `DatasourceNoData` alerts (a rule's query failed or came back empty) are titled by the rule and the datasource, "Out-of-memory kill · query failed", with the error text as the body; their templated summary reads "[no value]" and is ignored. Route them to nobody with `"alertname=DatasourceError": []` in `ROUTES` if they are unwanted.
+
 Payload: title = alert name (`Resolved: …` when resolved); body = `summary` annotation or the first label pair; subtitle = site and host; thread-id = folder; category `ALERT` so the app offers Silence as an action; `severity=page` sets the time-sensitive interruption level, everything else is active; resolved pushes reuse the collapse-id and carry no sound. A top-level `brazier` object carries fingerprint, status, labels, annotations, `generatorURL`, `silenceURL`, `externalURL` and folder for the app.
 
 Code: `relay/` in this repository, tests in `relay/test/`, deploy notes in `relay/README.md`. Live at `https://brazier.gicloud.org` (Worker `brazier-relay`).

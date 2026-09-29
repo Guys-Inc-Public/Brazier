@@ -1,4 +1,5 @@
 import { env, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
+import { buildPayload } from "../src/notify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
@@ -376,5 +377,44 @@ describe("delivery", () => {
     const res = await signedWebhook(grafanaWebhook([{}]));
     testEnv.ROUTES = JSON.stringify({ "site=meade-manor": "dmeade@damp.meme", "host=~ovh|oc-.*": ["cjackson@guysinc.org", "dmeade"], "*": "CJackson@guysinc.org" });
     expect(await res.json()).toMatchObject({ unrouted: 1, pushed: 0 });
+  });
+});
+
+describe("lock-screen text", () => {
+  const base = { fingerprint: "f56ec99056388acd", startsAt: "2026-09-29T13:58:30Z", endsAt: "0001-01-01T00:00:00Z" };
+  const datasourceError = {
+    ...base,
+    status: "firing" as const,
+    labels: { alertname: "DatasourceError", rulename: "Out-of-memory kill", datasource_uid: "prometheus", ref_id: "A", severity: "warn", grafana_folder: "Estate" },
+    annotations: { summary: "The kernel on [no value] killed a process for memory in the last 10 minutes", Error: 'Post "http://127.0.0.1:58696/api/v1/query": dial tcp 127.0.0.1:58696: connect: connection refused' },
+  };
+
+  it("names the rule and the datasource when Grafana raises DatasourceError, never the [no value] summary", () => {
+    const p = buildPayload(datasourceError as never, undefined) as { aps: { alert: { title: string; subtitle?: string; body: string }; "interruption-level": string }; brazier: { alertname: string; rulename?: string } };
+    expect(p.aps.alert.title).toBe("Out-of-memory kill · query failed");
+    expect(p.aps.alert.subtitle).toBe("prometheus");
+    expect(p.aps.alert.body).toMatch(/^Grafana could not query prometheus: Post /);
+    expect(p.aps.alert.body).not.toContain("[no value]");
+    expect(p.aps["interruption-level"]).toBe("active");
+    expect(p.brazier.alertname).toBe("DatasourceError");
+    expect(p.brazier.rulename).toBe("Out-of-memory kill");
+    const r = buildPayload({ ...datasourceError, status: "resolved" } as never, undefined) as { aps: { alert: { title: string } } };
+    expect(r.aps.alert.title).toBe("Resolved: Out-of-memory kill · query failed");
+  });
+
+  it("says no data for DatasourceNoData", () => {
+    const a = { ...base, status: "firing" as const, labels: { alertname: "DatasourceNoData", rulename: "Exporter not scraping", datasource_uid: "prometheus" }, annotations: {} };
+    const p = buildPayload(a as never, undefined) as { aps: { alert: { title: string; body: string } } };
+    expect(p.aps.alert.title).toBe("Exporter not scraping · no data");
+    expect(p.aps.alert.body).toBe("The query on prometheus returned nothing.");
+  });
+
+  it("keeps a real alert's summary, site and host", () => {
+    const a = { ...base, status: "firing" as const, labels: { alertname: "Disk almost full", site: "house", host: "mitochondria", severity: "page" }, annotations: { summary: "/ has 4% left" } };
+    const p = buildPayload(a as never, undefined) as { aps: { alert: { title: string; subtitle?: string; body: string }; "interruption-level": string } };
+    expect(p.aps.alert.title).toBe("Disk almost full");
+    expect(p.aps.alert.subtitle).toBe("house · mitochondria");
+    expect(p.aps.alert.body).toBe("/ has 4% left");
+    expect(p.aps["interruption-level"]).toBe("time-sensitive");
   });
 });

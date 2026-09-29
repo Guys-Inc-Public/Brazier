@@ -63,28 +63,49 @@ export function buildPayload(alert: GrafanaAlert, externalURL: string | undefine
   const l = alert.labels;
   const an = alert.annotations ?? {};
   const name = l.alertname ?? "Alert";
-  const firstPair = Object.entries(l).find(([k]) => k !== "alertname" && k !== "grafana_folder");
-  const summary = an.summary ?? (firstPair ? `${firstPair[0]}=${firstPair[1]}` : "");
   const resolved = alert.status === "resolved";
-  const where = [l.site, l.host].filter(Boolean).join(" · ");
   const page = l.severity === "page" && !resolved;
+  // Grafana raises DatasourceError and DatasourceNoData itself when a rule's query fails or comes back
+  // empty. Their annotations are the rule's own, templated with no labels ("[no value]"), so the text is
+  // built from what the synthetic alert does carry: the rule's name, the datasource and the error.
+  const synthetic = name === "DatasourceError" || name === "DatasourceNoData";
+  let title: string;
+  let subtitle: string | undefined;
+  let body: string;
+  if (synthetic) {
+    const failed = name === "DatasourceError";
+    const rule = l.rulename ?? "A rule";
+    const source = l.datasource_uid ?? "its datasource";
+    const why = (an.Error ?? "").replace(/\s+/g, " ").trim().slice(0, 180);
+    title = `${rule} · ${failed ? "query failed" : "no data"}`;
+    subtitle = source;
+    body = failed
+      ? why ? `Grafana could not query ${source}: ${why}` : `Grafana could not query ${source}.`
+      : `The query on ${source} returned nothing.`;
+  } else {
+    const firstPair = Object.entries(l).find(([k]) => k !== "alertname" && k !== "grafana_folder");
+    title = name;
+    subtitle = [l.site, l.host].filter(Boolean).join(" · ") || undefined;
+    body = an.summary ?? (firstPair ? `${firstPair[0]}=${firstPair[1]}` : "");
+  }
   return {
     aps: {
       alert: {
-        title: resolved ? `Resolved: ${name}` : name,
-        subtitle: where || undefined,
-        body: summary,
+        title: resolved ? `Resolved: ${title}` : title,
+        subtitle,
+        body,
       },
       sound: resolved ? undefined : "default",
       "thread-id": l.grafana_folder ?? "alerts",
       category: "ALERT",
       "interruption-level": page ? "time-sensitive" : "active",
-      "relevance-score": page ? 1 : resolved ? 0.2 : 0.6,
+      "relevance-score": page ? 1 : resolved ? 0.2 : synthetic ? 0.4 : 0.6,
     },
     brazier: {
       fingerprint: alert.fingerprint,
       status: alert.status,
       alertname: name,
+      rulename: l.rulename,
       labels: l,
       annotations: an,
       startsAt: alert.startsAt,

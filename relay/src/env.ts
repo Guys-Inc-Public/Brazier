@@ -17,7 +17,7 @@ export interface Env {
   APNS_KEY?: string;
 }
 
-export const VERSION = "0.4.1";
+export const VERSION = "0.4.2";
 
 /** Seven days, in seconds: how long a sent firing/resolved pair is remembered for dedupe. */
 export const SENT_TTL_SECONDS = 7 * 24 * 60 * 60;

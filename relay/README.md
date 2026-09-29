@@ -46,7 +46,7 @@ The APNs key belongs to the Apple developer account that ships the app. Until th
 
 ## What a push carries
 
-`aps.alert` title, subtitle (`site · host`) and body (the `summary` annotation, else the first label); `thread-id` = the Grafana folder; `category` = `ALERT` so the app can offer Silence; `interruption-level` = `time-sensitive` for `severity=page`, else `active`; a resolved alert reuses the firing alert's collapse id (its fingerprint) so the lock screen shows one line, and carries no sound. A top-level `brazier` object holds the fingerprint, status, labels, annotations, `generatorURL`, `silenceURL`, `externalURL` and folder.
+`aps.alert` title, subtitle (`site · host`) and body (the `summary` annotation, else the first label); Grafana's own `DatasourceError` and `DatasourceNoData` alerts are titled by the rule (`<rule> · query failed`, `<rule> · no data`), subtitled by the datasource, with the error as the body, since their summary is templated with no labels; drop them with `"alertname=DatasourceError": []` in `ROUTES` if unwanted; `thread-id` = the Grafana folder; `category` = `ALERT` so the app can offer Silence; `interruption-level` = `time-sensitive` for `severity=page`, else `active`; a resolved alert reuses the firing alert's collapse id (its fingerprint) so the lock screen shows one line, and carries no sound. A top-level `brazier` object holds the fingerprint, status, labels, annotations, `generatorURL`, `silenceURL`, `externalURL` and folder.
 
 ## Tests
 
