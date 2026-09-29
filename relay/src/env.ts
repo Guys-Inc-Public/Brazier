@@ -10,6 +10,9 @@ export interface Env {
    *  Grafana address alone. Defaults to the origin the document is requested on when that is not a Grafana. */
   RELAY_URL?: string;
   ROUTES: string;
+  /** Optional JSON: Grafana org id (as a string) → display name, put on the lock screen and in the payload:
+   *  {"1":"Infrastructure","2":"Guys Inc Public"}. Without it pushes carry the org id alone. */
+  ORGS?: string;
   APNS_TEAM_ID: string;
   APNS_TOPIC: string;
   APNS_KEY_ID: string;
@@ -17,7 +20,7 @@ export interface Env {
   APNS_KEY?: string;
 }
 
-export const VERSION = "0.4.2";
+export const VERSION = "0.5.0";
 
 /** Seven days, in seconds: how long a sent firing/resolved pair is remembered for dedupe. */
 export const SENT_TTL_SECONDS = 7 * 24 * 60 * 60;

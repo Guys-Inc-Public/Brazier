@@ -1,5 +1,7 @@
 import { env, createExecutionContext, waitOnExecutionContext } from "cloudflare:test";
-import { buildPayload } from "../src/notify";
+import { buildPayload, sentKey } from "../src/notify";
+import { readPrefs } from "../src/index";
+import { inQuietHours, level, localMinutes, meets } from "../src/severity";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
@@ -102,6 +104,7 @@ beforeAll(async () => {
     ...env,
     GRAFANA_URLS: `${GRAFANA}, https://other.test`,
     RELAY_URL: undefined, // derived from the request origin in these tests unless a test sets it
+    ORGS: undefined, // wrangler.jsonc names the estate's orgs; the tests set their own
     SIGN_IN: JSON.stringify({ [GRAFANA]: { issuer: "https://idp.test/application/o/brazier/", clientId: "client-123", name: "Test Org" } }),
     ROUTES: JSON.stringify({ "site=meade-manor": "dmeade@damp.meme", "host=~ovh|oc-.*": ["cjackson@guysinc.org", "dmeade"], "*": "CJackson@guysinc.org" }),
     WEBHOOK_SECRET: SECRET,
@@ -316,6 +319,19 @@ describe("delivery", () => {
     const again = await signedWebhook(grafanaWebhook([{}]));
     expect(await again.json()).toMatchObject({ received: 1, pushed: 0, skipped: 1 });
     expect(seen).toHaveLength(1);
+    expect(await env.DEVICES.get("sent/1:b69ade466fb0e990:firing:2026-09-28T23:53:50Z")).toBe("1");
+  });
+
+  it("dedupes per org: the same fingerprint in another org is a different alert", async () => {
+    await register(TOKEN_A, CJ);
+    const seen = apnsAnswers(200);
+    await signedWebhook(grafanaWebhook([{}]));
+    const other = grafanaWebhook([{ orgId: 2 } as never]);
+    other.orgId = 2;
+    const res = await signedWebhook(other);
+    expect(await res.json()).toMatchObject({ pushed: 1, skipped: 0 });
+    expect(seen).toHaveLength(2);
+    expect(await env.DEVICES.get("sent/2:b69ade466fb0e990:firing:2026-09-28T23:53:50Z")).toBe("1");
   });
 
   it("pushes the resolved state under the same collapse id, without a sound, and a warn alert at the active level", async () => {
@@ -359,7 +375,7 @@ describe("delivery", () => {
     expect(await res.json()).toMatchObject({ pushed: 0, dropped: 1 });
     expect(await env.DEVICES.get("devices/cjackson@guysinc.org")).toBeNull();
     // and nothing was recorded as sent, so a new device would still hear about it
-    expect(await env.DEVICES.get("sent/b69ade466fb0e990:firing:2026-09-28T23:53:50Z")).toBeNull();
+    expect(await env.DEVICES.get("sent/1:b69ade466fb0e990:firing:2026-09-28T23:53:50Z")).toBeNull();
   });
 
   it("accepts the webhook but sends nothing while APNs is unconfigured", async () => {
@@ -416,5 +432,228 @@ describe("lock-screen text", () => {
     expect(p.aps.alert.subtitle).toBe("house · mitochondria");
     expect(p.aps.alert.body).toBe("/ has 4% left");
     expect(p.aps["interruption-level"]).toBe("time-sensitive");
+  });
+});
+
+describe("organizations", () => {
+  const alert = { fingerprint: "abc", startsAt: "2026-09-29T10:00:00Z", status: "firing" as const, labels: { alertname: "Disk almost full", site: "house", host: "mitochondria", severity: "page" }, annotations: { summary: "/ has 4% left" } };
+
+  it("keys the dedupe record by org, fingerprint, state and start", () => {
+    expect(sentKey(alert as never, 4)).toBe("sent/4:abc:firing:2026-09-29T10:00:00Z");
+    expect(sentKey({ ...alert, startsAt: undefined } as never, 0)).toBe("sent/0:abc:firing:");
+  });
+
+  it("puts the org name first on the lock screen and the id and name in the payload", () => {
+    const p = buildPayload(alert as never, "https://grafana.test/", 4, "Meade Manor") as { aps: { alert: { subtitle?: string } }; brazier: { orgId?: number; org?: string } };
+    expect(p.aps.alert.subtitle).toBe("Meade Manor · house · mitochondria");
+    expect(p.brazier).toMatchObject({ orgId: 4, org: "Meade Manor" });
+    const bare = buildPayload(alert as never, undefined, 4) as { aps: { alert: { subtitle?: string } }; brazier: { orgId?: number; org?: string } };
+    expect(bare.aps.alert.subtitle).toBe("house · mitochondria");
+    expect(bare.brazier.orgId).toBe(4);
+    expect(bare.brazier.org).toBeUndefined();
+    const synthetic = buildPayload({ ...alert, labels: { alertname: "DatasourceNoData", rulename: "Exporter", datasource_uid: "prometheus" } } as never, undefined, 1, "Infrastructure") as { aps: { alert: { title: string; subtitle?: string } } };
+    expect(synthetic.aps.alert.title).toBe("Exporter · no data");
+    expect(synthetic.aps.alert.subtitle).toBe("Infrastructure · prometheus");
+  });
+
+  it("names the org from ORGS on a real push, and ignores a broken ORGS", async () => {
+    await register(TOKEN_A, CJ);
+    const seen = apnsAnswers(200);
+    testEnv.ORGS = JSON.stringify({ "1": "Infrastructure", "2": "Guys Inc Public" });
+    await signedWebhook(grafanaWebhook([{}]));
+    testEnv.ORGS = "{not json";
+    await signedWebhook(grafanaWebhook([{ fingerprint: "c0ffee0000000002" }]));
+    testEnv.ORGS = undefined;
+    expect(seen).toHaveLength(2);
+    const named = JSON.parse(seen[0].body) as { aps: { alert: { subtitle: string } }; brazier: { orgId: number; org: string } };
+    expect(named.aps.alert.subtitle).toBe("Infrastructure · home · mitochondria");
+    expect(named.brazier).toMatchObject({ orgId: 1, org: "Infrastructure" });
+    const unnamed = JSON.parse(seen[1].body) as { aps: { alert: { subtitle: string } }; brazier: { orgId: number; org?: string } };
+    expect(unnamed.aps.alert.subtitle).toBe("home · mitochondria");
+    expect(unnamed.brazier.orgId).toBe(1);
+    expect(unnamed.brazier.org).toBeUndefined();
+  });
+});
+
+describe("severity", () => {
+  it("ranks the usual words and treats anything else as warning", () => {
+    expect(level("page")).toBe("page");
+    expect(level("Emergency")).toBe("page");
+    expect(level("critical")).toBe("critical");
+    expect(level("CRIT")).toBe("critical");
+    expect(level("high")).toBe("critical");
+    expect(level("error")).toBe("critical");
+    expect(level("warn")).toBe("warning");
+    expect(level("medium")).toBe("warning");
+    expect(level("info")).toBe("info");
+    expect(level("notice")).toBe("info");
+    expect(level("low")).toBe("info");
+    expect(level("purple")).toBe("warning");
+    expect(level(undefined)).toBe("warning");
+    expect(level("")).toBe("warning");
+  });
+
+  it("applies a floor; no floor lets everything through", () => {
+    expect(meets("info", undefined)).toBe(true);
+    expect(meets("info", "warning")).toBe(false);
+    expect(meets("warn", "warning")).toBe(true);
+    expect(meets(undefined, "critical")).toBe(false);
+    expect(meets("page", "critical")).toBe(true);
+    expect(meets("critical", "page")).toBe(false);
+  });
+});
+
+describe("quiet hours", () => {
+  const at = (iso: string) => new Date(iso);
+
+  it("reads the local clock in the device's zone", () => {
+    expect(localMinutes("UTC", at("2026-09-29T23:30:00Z"))).toBe(23 * 60 + 30);
+    expect(localMinutes("America/Chicago", at("2026-09-29T23:30:00Z"))).toBe(18 * 60 + 30); // CDT, UTC-5
+    expect(localMinutes("Europe/Paris", at("2026-09-29T23:30:00Z"))).toBe(1 * 60 + 30); // CEST, next day
+    expect(localMinutes("Mars/Olympus", at("2026-09-29T23:30:00Z"))).toBeNull();
+  });
+
+  it("knows a window that crosses midnight", () => {
+    const quiet = { start: "22:00", end: "07:00", tz: "UTC" };
+    expect(inQuietHours(quiet, at("2026-09-29T21:59:00Z"))).toBe(false);
+    expect(inQuietHours(quiet, at("2026-09-29T22:00:00Z"))).toBe(true);
+    expect(inQuietHours(quiet, at("2026-09-30T03:00:00Z"))).toBe(true);
+    expect(inQuietHours(quiet, at("2026-09-30T06:59:00Z"))).toBe(true);
+    expect(inQuietHours(quiet, at("2026-09-30T07:00:00Z"))).toBe(false);
+    expect(inQuietHours(quiet, at("2026-09-30T12:00:00Z"))).toBe(false);
+  });
+
+  it("knows a window inside one day, in the device's zone", () => {
+    const quiet = { start: "13:00", end: "14:00", tz: "America/Chicago" };
+    expect(inQuietHours(quiet, at("2026-09-29T18:30:00Z"))).toBe(true); // 13:30 CDT
+    expect(inQuietHours(quiet, at("2026-09-29T19:00:00Z"))).toBe(false); // 14:00 CDT
+    expect(inQuietHours(quiet, at("2026-09-29T13:30:00Z"))).toBe(false); // 08:30 CDT
+  });
+
+  it("is never quiet with an unknown zone, a bad time or no window", () => {
+    expect(inQuietHours({ start: "00:00", end: "23:59", tz: "Mars/Olympus" }, at("2026-09-29T12:00:00Z"))).toBe(false);
+    expect(inQuietHours({ start: "25:00", end: "07:00", tz: "UTC" }, at("2026-09-29T03:00:00Z"))).toBe(false);
+    expect(inQuietHours({ start: "07:00", end: "07:00", tz: "UTC" }, at("2026-09-29T07:00:00Z"))).toBe(false);
+    expect(inQuietHours(null, at("2026-09-29T07:00:00Z"))).toBe(false);
+    expect(inQuietHours(undefined, at("2026-09-29T07:00:00Z"))).toBe(false);
+  });
+});
+
+/** A quiet window around the present moment in UTC, so the delivery tests hold at any hour. */
+function quietNow(): { start: string; end: string; tz: string } {
+  const cur = localMinutes("UTC", new Date()) as number;
+  const hhmm = (m: number) => `${String(Math.floor(((m % 1440) + 1440) % 1440 / 60)).padStart(2, "0")}:${String(((m % 1440) + 1440) % 1440 % 60).padStart(2, "0")}`;
+  return { start: hhmm(cur - 60), end: hhmm(cur + 60), tz: "UTC" };
+}
+
+describe("preferences", () => {
+  const prefsOf = async (cred: Cred = CJ) => {
+    const list = (await (await call(new Request("https://relay.test/devices", { headers: credHeaders(cred) }))).json()) as { devices: Array<{ prefs: unknown }> };
+    return list.devices.map((d) => d.prefs);
+  };
+  const put = (token: string, body: unknown, cred: Cred = CJ) =>
+    call(new Request(`https://relay.test/devices/${token}/preferences`, { method: "PUT", headers: { ...credHeaders(cred), "content-type": "application/json" }, body: typeof body === "string" ? body : JSON.stringify(body) }));
+
+  it("checks each field", () => {
+    expect(readPrefs({})).toEqual({});
+    expect(readPrefs({ orgs: [1, 4, 1], minSeverity: "critical", quiet: { start: "22:00", end: "07:00", tz: "America/Chicago", allowPage: true } })).toEqual({ orgs: [1, 4], minSeverity: "critical", quiet: { start: "22:00", end: "07:00", tz: "America/Chicago", allowPage: true } });
+    expect(readPrefs({ orgs: null, quiet: null })).toEqual({ orgs: null, quiet: null });
+    for (const bad of [null, [], "x", { orgs: [0] }, { orgs: ["1"] }, { orgs: 1 }, { minSeverity: "loud" }, { minSeverity: 3 }, { quiet: [] }, { quiet: { start: "22:00", tz: "UTC" } }, { quiet: { start: "22:00", end: "7:00", tz: "UTC" } }, { quiet: { start: "25:00", end: "07:00", tz: "UTC" } }, { quiet: { start: "22:00", end: "07:00", tz: "" } }, { quiet: { start: "22:00", end: "07:00", tz: "x".repeat(65) } }, { quiet: { start: "22:00", end: "07:00", tz: "UTC", allowPage: "yes" } }, { colour: "hot" }]) {
+      expect(() => readPrefs(bad), JSON.stringify(bad)).toThrow();
+    }
+  });
+
+  it("takes prefs on registration, keeps them across a re-registration, and replaces them on PUT", async () => {
+    const reg = await register(TOKEN_A, CJ, { prefs: { orgs: [1], minSeverity: "warning" } });
+    expect(reg.status).toBe(200);
+    expect(await prefsOf()).toEqual([{ orgs: [1], minSeverity: "warning" }]);
+    // the app re-registers on every launch, without prefs: nothing is lost
+    await register(TOKEN_A, { jwt: "id-token-cj" });
+    expect(await prefsOf()).toEqual([{ orgs: [1], minSeverity: "warning" }]);
+    const res = await put(TOKEN_A, { quiet: { start: "22:00", end: "07:00", tz: "America/Chicago" } });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, prefs: { quiet: { start: "22:00", end: "07:00", tz: "America/Chicago" } } });
+    expect(await prefsOf()).toEqual([{ quiet: { start: "22:00", end: "07:00", tz: "America/Chicago" } }]);
+    // and a device registered without any shows an empty object
+    await register(TOKEN_B, CJ);
+    expect((await prefsOf()).sort((a, b) => JSON.stringify(a).length - JSON.stringify(b).length)).toEqual([{}, { quiet: { start: "22:00", end: "07:00", tz: "America/Chicago" } }]);
+  });
+
+  it("answers 400 for bad prefs, on registration and on PUT", async () => {
+    expect((await register(TOKEN_A, CJ, { prefs: { minSeverity: "loud" } })).status).toBe(400);
+    expect((await register(TOKEN_A, CJ, { prefs: "all" })).status).toBe(400);
+    await register(TOKEN_A, CJ);
+    expect((await put(TOKEN_A, { orgs: [0] })).status).toBe(400);
+    expect((await put(TOKEN_A, { quiet: { start: "22:00", end: "07:00" } })).status).toBe(400);
+    expect((await put(TOKEN_A, "{not json")).status).toBe(400);
+    expect((await put(TOKEN_A, { colour: "hot" })).status).toBe(400);
+    expect((await put("not-hex", {})).status).toBe(400);
+  });
+
+  it("answers 404 for a token not filed under the caller, and 401 without a credential", async () => {
+    await register(TOKEN_A, CJ);
+    expect((await put(TOKEN_B, {})).status).toBe(404);
+    expect((await put(TOKEN_A, {}, DM)).status).toBe(404);
+    expect((await put(TOKEN_A, {}, { bearer: "glsa_nope" })).status).toBe(401);
+    expect(await prefsOf()).toEqual([{}]);
+  });
+
+  it("drops alerts below the device's severity floor, and the resolved push with them", async () => {
+    await register(TOKEN_A, CJ, { prefs: { minSeverity: "critical" } });
+    const seen = apnsAnswers(200);
+    const warn = { fingerprint: "c0ffee0000000001", labels: { alertname: "Disk full within 7 days", grafana_folder: "Estate", host: "mitochondria", severity: "warn" }, annotations: {} };
+    let res = await signedWebhook(grafanaWebhook([warn]));
+    expect(await res.json()).toMatchObject({ pushed: 0, filtered: 1, unrouted: 0 });
+    expect(seen).toHaveLength(0);
+    res = await signedWebhook(grafanaWebhook([{ ...warn, status: "resolved", endsAt: "2026-09-29T00:10:00Z" }]));
+    expect(await res.json()).toMatchObject({ pushed: 0, filtered: 1 });
+    expect(seen).toHaveLength(0);
+    // a page still comes through, and one with no severity label counts as warning
+    await signedWebhook(grafanaWebhook([{}, { fingerprint: "c0ffee0000000003", labels: { alertname: "Unlabelled", grafana_folder: "Estate" } }]));
+    expect(seen.map((s) => (JSON.parse(s.body) as { aps: { alert: { title: string } } }).aps.alert.title)).toEqual(["Disk above 85 percent"]);
+  });
+
+  it("drops alerts from orgs the device did not ask for; an empty list means every org", async () => {
+    await register(TOKEN_A, CJ, { prefs: { orgs: [2, 3] } });
+    await register(TOKEN_B, CJ, { prefs: { orgs: [] } });
+    const seen = apnsAnswers(200);
+    const res = await signedWebhook(grafanaWebhook([{}])); // org 1
+    expect(await res.json()).toMatchObject({ pushed: 1, filtered: 1 });
+    expect(seen.map((s) => s.path)).toEqual([`/3/device/${TOKEN_B}`]);
+    const org3 = grafanaWebhook([{ fingerprint: "c0ffee0000000004", orgId: 3 } as never]);
+    org3.orgId = 3;
+    expect(await (await signedWebhook(org3)).json()).toMatchObject({ pushed: 2, filtered: 0 });
+  });
+
+  it("delivers silently inside quiet hours, except a page unless the device said otherwise", async () => {
+    await register(TOKEN_A, CJ, { prefs: { quiet: quietNow() } });
+    await register(TOKEN_B, CJ, { prefs: { quiet: { ...quietNow(), allowPage: false } } });
+    const seen = apnsAnswers(200);
+    const warn = { fingerprint: "c0ffee0000000005", labels: { alertname: "Disk full within 7 days", grafana_folder: "Estate", host: "mitochondria", severity: "warn" }, annotations: {} };
+    const res = await signedWebhook(grafanaWebhook([warn, { fingerprint: "b69ade466fb0e990" }]));
+    expect(await res.json()).toMatchObject({ pushed: 4, quiet: 3 });
+    const byPath = (fp: string, token: string) => seen.filter((s) => s.path === `/3/device/${token}` && s.headers["apns-collapse-id"] === fp).map((s) => JSON.parse(s.body) as { aps: Record<string, unknown> })[0];
+    const warnA = byPath("c0ffee0000000005", TOKEN_A);
+    expect(warnA.aps.sound).toBeUndefined();
+    expect(warnA.aps["interruption-level"]).toBe("passive");
+    const pageA = byPath("b69ade466fb0e990", TOKEN_A);
+    expect(pageA.aps.sound).toBe("default");
+    expect(pageA.aps["interruption-level"]).toBe("time-sensitive");
+    const pageB = byPath("b69ade466fb0e990", TOKEN_B);
+    expect(pageB.aps.sound).toBeUndefined();
+    expect(pageB.aps["interruption-level"]).toBe("passive");
+    // the loud copy is untouched: the payload was cloned, not edited
+    expect((pageA.aps.alert as Record<string, string>).title).toBe("Disk above 85 percent");
+  });
+
+  it("is loud outside quiet hours and with a zone it cannot read", async () => {
+    const cur = localMinutes("UTC", new Date()) as number;
+    const far = (m: number) => `${String(Math.floor((((m % 1440) + 1440) % 1440) / 60)).padStart(2, "0")}:${String((((m % 1440) + 1440) % 1440) % 60).padStart(2, "0")}`;
+    await register(TOKEN_A, CJ, { prefs: { quiet: { start: far(cur + 120), end: far(cur + 180), tz: "UTC" } } });
+    await register(TOKEN_B, CJ, { prefs: { quiet: { start: "00:00", end: "23:59", tz: "Mars/Olympus" } } });
+    const seen = apnsAnswers(200);
+    const res = await signedWebhook(grafanaWebhook([{}]));
+    expect(await res.json()).toMatchObject({ pushed: 2, quiet: 0 });
+    for (const s of seen) expect((JSON.parse(s.body) as { aps: Record<string, unknown> }).aps.sound).toBe("default");
   });
 });

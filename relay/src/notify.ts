@@ -1,9 +1,10 @@
-/** Turn a Grafana webhook payload into pushes: dedupe, route, send, drop dead devices. */
+/** Turn a Grafana webhook payload into pushes: dedupe, route, filter per device, send, drop dead devices. */
 import type { Env } from "./env";
 import { SENT_TTL_SECONDS, apnsConfigured } from "./env";
 import { parseRoutes, routeUsers } from "./routing";
-import { listDevices, removeDevice, resolveUser } from "./devices";
+import { listDevices, removeDevice, resolveUser, type Prefs } from "./devices";
 import { sendPush, type ApnsConfig } from "./apns";
+import { inQuietHours, level, meets } from "./severity";
 
 /** The parts of Grafana's webhook body the relay reads. */
 export interface GrafanaAlert {
@@ -18,6 +19,8 @@ export interface GrafanaAlert {
   dashboardURL?: string;
   panelURL?: string;
   valueString?: string;
+  /** the Grafana organization the rule lives in (Grafana 9+ sends it per alert and on the body) */
+  orgId?: number;
 }
 
 export interface GrafanaWebhook {
@@ -27,6 +30,7 @@ export interface GrafanaWebhook {
   externalURL?: string;
   groupKey?: string;
   version?: string;
+  orgId?: number;
 }
 
 export interface Outcome {
@@ -34,6 +38,10 @@ export interface Outcome {
   pushed: number;
   skipped: number;
   unrouted: number;
+  /** device sends skipped by that device's org or severity preferences */
+  filtered: number;
+  /** pushes delivered silently because the device was in its quiet hours */
+  quiet: number;
   dropped: number;
   failed: number;
   apns: boolean;
@@ -58,8 +66,30 @@ export function parseWebhook(text: string): GrafanaWebhook {
   return wh;
 }
 
+/** The org an alert belongs to: its own field, else the body's, else 0 for a Grafana that sends none. */
+export function orgOf(alert: GrafanaAlert, wh: GrafanaWebhook): number {
+  if (typeof alert.orgId === "number") return alert.orgId;
+  if (typeof wh.orgId === "number") return wh.orgId;
+  return 0;
+}
+
+/** `ORGS`: org id → display name, for the lock screen. Bad JSON is logged and ignored, never fails a webhook. */
+export function parseOrgs(raw: string | undefined): Record<string, string> {
+  if (!raw) return {};
+  try {
+    const obj = JSON.parse(raw) as unknown;
+    if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("not an object");
+    const out: Record<string, string> = {};
+    for (const [k, v] of Object.entries(obj as Record<string, unknown>)) if (typeof v === "string" && v) out[k] = v;
+    return out;
+  } catch (e) {
+    console.log(`ORGS ignored: ${(e as Error).message}`);
+    return {};
+  }
+}
+
 /** The lock-screen text and the data the app needs to open and silence the alert. */
-export function buildPayload(alert: GrafanaAlert, externalURL: string | undefined): Record<string, unknown> {
+export function buildPayload(alert: GrafanaAlert, externalURL: string | undefined, orgId?: number, orgName?: string): Record<string, unknown> {
   const l = alert.labels;
   const an = alert.annotations ?? {};
   const name = l.alertname ?? "Alert";
@@ -78,14 +108,14 @@ export function buildPayload(alert: GrafanaAlert, externalURL: string | undefine
     const source = l.datasource_uid ?? "its datasource";
     const why = (an.Error ?? "").replace(/\s+/g, " ").trim().slice(0, 180);
     title = `${rule} · ${failed ? "query failed" : "no data"}`;
-    subtitle = source;
+    subtitle = orgName ? `${orgName} · ${source}` : source;
     body = failed
       ? why ? `Grafana could not query ${source}: ${why}` : `Grafana could not query ${source}.`
       : `The query on ${source} returned nothing.`;
   } else {
     const firstPair = Object.entries(l).find(([k]) => k !== "alertname" && k !== "grafana_folder");
     title = name;
-    subtitle = [l.site, l.host].filter(Boolean).join(" · ") || undefined;
+    subtitle = [orgName, l.site, l.host].filter(Boolean).join(" · ") || undefined;
     body = an.summary ?? (firstPair ? `${firstPair[0]}=${firstPair[1]}` : "");
   }
   return {
@@ -114,23 +144,50 @@ export function buildPayload(alert: GrafanaAlert, externalURL: string | undefine
       silenceURL: alert.silenceURL,
       externalURL,
       folder: l.grafana_folder,
+      orgId,
+      org: orgName,
     },
   };
 }
 
-function sentKey(a: GrafanaAlert): string {
-  return `sent/${a.fingerprint}:${a.status}:${a.startsAt ?? ""}`;
+/** The same push with no sound and a passive interruption level: it lands in the list, it does not wake anyone. */
+export function quieten(payload: Record<string, unknown>): Record<string, unknown> {
+  const aps = { ...(payload.aps as Record<string, unknown>) };
+  delete aps.sound;
+  aps["interruption-level"] = "passive";
+  return { ...payload, aps };
 }
 
-export async function deliver(env: Env, wh: GrafanaWebhook): Promise<Outcome> {
-  const out: Outcome = { received: wh.alerts.length, pushed: 0, skipped: 0, unrouted: 0, dropped: 0, failed: 0, apns: apnsConfigured(env) };
+/** Does this device want the alert at all? Org and severity floors drop it; quiet hours only soften it. */
+export function wanted(prefs: Prefs | undefined, orgId: number, severity: string | undefined): boolean {
+  if (!prefs) return true;
+  if (Array.isArray(prefs.orgs) && prefs.orgs.length > 0 && !prefs.orgs.includes(orgId)) return false;
+  return meets(severity, prefs.minSeverity);
+}
+
+/** Inside quiet hours and not a page the device asked to hear anyway. */
+export function softened(prefs: Prefs | undefined, severity: string | undefined, now: Date): boolean {
+  if (!prefs?.quiet || !inQuietHours(prefs.quiet, now)) return false;
+  return !(level(severity) === "page" && prefs.quiet.allowPage !== false);
+}
+
+/** Dedupe key: one push per org, fingerprint, state and start time. Fingerprints are hashes of the labels, so
+ *  two orgs with the same rule and labels collide without the org in front. */
+export function sentKey(a: GrafanaAlert, orgId: number): string {
+  return `sent/${orgId}:${a.fingerprint}:${a.status}:${a.startsAt ?? ""}`;
+}
+
+export async function deliver(env: Env, wh: GrafanaWebhook, now = new Date()): Promise<Outcome> {
+  const out: Outcome = { received: wh.alerts.length, pushed: 0, skipped: 0, unrouted: 0, filtered: 0, quiet: 0, dropped: 0, failed: 0, apns: apnsConfigured(env) };
   const routes = parseRoutes(env.ROUTES);
+  const orgs = parseOrgs(env.ORGS);
   const cfg: ApnsConfig | null = out.apns
     ? { key: env.APNS_KEY as string, keyId: env.APNS_KEY_ID, teamId: env.APNS_TEAM_ID, topic: env.APNS_TOPIC }
     : null;
 
   for (const alert of wh.alerts) {
-    if (await env.DEVICES.get(sentKey(alert))) {
+    const orgId = orgOf(alert, wh);
+    if (await env.DEVICES.get(sentKey(alert, orgId))) {
       out.skipped++;
       continue;
     }
@@ -140,15 +197,22 @@ export async function deliver(env: Env, wh: GrafanaWebhook): Promise<Outcome> {
       continue;
     }
     if (!cfg) continue; // accepted, nothing to send with yet
-    const payload = buildPayload(alert, wh.externalURL);
+    const payload = buildPayload(alert, wh.externalURL, orgId, orgs[String(orgId)]);
+    const severity = alert.labels.severity;
     let accepted = 0;
     for (const name of users) {
       const user = await resolveUser(env.DEVICES, name);
       for (const device of await listDevices(env.DEVICES, user)) {
-        const r = await sendPush(cfg, device.token, device.environment, { collapseId: alert.fingerprint, payload });
+        if (!wanted(device.prefs, orgId, severity)) {
+          out.filtered++;
+          continue;
+        }
+        const soft = softened(device.prefs, severity, now);
+        const r = await sendPush(cfg, device.token, device.environment, { collapseId: alert.fingerprint, payload: soft ? quieten(payload) : payload });
         if (r.status === 200) {
           accepted++;
           out.pushed++;
+          if (soft) out.quiet++;
         } else if (r.drop) {
           out.dropped++;
           await removeDevice(env.DEVICES, user, device.token);
@@ -159,7 +223,7 @@ export async function deliver(env: Env, wh: GrafanaWebhook): Promise<Outcome> {
         }
       }
     }
-    if (accepted > 0) await env.DEVICES.put(sentKey(alert), "1", { expirationTtl: SENT_TTL_SECONDS });
+    if (accepted > 0) await env.DEVICES.put(sentKey(alert, orgId), "1", { expirationTtl: SENT_TTL_SECONDS });
   }
   return out;
 }
