@@ -3,18 +3,43 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
 import { signLikeGrafana } from "../src/hmac";
-import { makeIssuer, makeApnsKeyPem, grafanaWebhook, type Issuer } from "./helpers";
+import { makeApnsKeyPem, grafanaWebhook } from "./helpers";
 
 const SECRET = "test-webhook-secret";
-const JWKS_URL = "https://keystone.test/application/o/brazier/jwks/";
-const ISSUER = "https://keystone.test/application/o/brazier/";
-const AUD = "test-client-id";
+const GRAFANA = "https://grafana.test";
 const TOKEN_A = "a".repeat(64);
 const TOKEN_B = "b".repeat(64);
 const TOKEN_D = "d".repeat(64);
 
-let issuer: Issuer;
 let testEnv: Env;
+
+/** Outbound fetches are stubbed per origin; anything unexpected throws. */
+type Handler = (req: Request) => Promise<Response> | Response;
+const outbound: Array<{ origin: string; handler: Handler }> = [];
+const realFetch = globalThis.fetch;
+
+/** The credentials the stub Grafana at GRAFANA accepts, and who they belong to. */
+const KNOWN: Record<string, { login: string; email: string; name: string }> = {
+  "bearer:glsa_cj": { login: "cjackson@guysinc.org", email: "cjackson@guysinc.org", name: "Cameron Jackson" },
+  "cookie:sess-cj": { login: "cjackson@guysinc.org", email: "cjackson@guysinc.org", name: "Cameron Jackson" },
+  "jwt:id-token-cj": { login: "cjackson@guysinc.org", email: "cjackson@guysinc.org", name: "Cameron Jackson" },
+  "bearer:glsa_dm": { login: "dmeade", email: "dmeade@damp.meme", name: "Daniel Meade" },
+};
+
+function stubGrafana(origin = GRAFANA) {
+  outbound.push({
+    origin,
+    handler: (req) => {
+      if (new URL(req.url).pathname !== "/api/user") return new Response("not found", { status: 404 });
+      const auth = req.headers.get("authorization");
+      const cookie = req.headers.get("cookie");
+      const jwt = req.headers.get("x-jwt-assertion");
+      const key = auth ? `bearer:${auth.replace(/^Bearer /, "")}` : cookie ? `cookie:${cookie.replace(/^grafana_session=/, "")}` : jwt ? `jwt:${jwt}` : "";
+      const who = KNOWN[key];
+      return who ? Response.json(who) : Response.json({ message: "Unauthorized" }, { status: 401 });
+    },
+  });
+}
 
 async function call(req: Request): Promise<Response> {
   const ctx = createExecutionContext();
@@ -33,25 +58,27 @@ async function signedWebhook(body: Record<string, unknown>, opts: { secret?: str
   return call(new Request("https://relay.test/grafana", { method: "POST", headers, body: raw }));
 }
 
-async function idToken(overrides: Record<string, unknown> = {}, kid?: string): Promise<string> {
-  const now = Math.floor(Date.now() / 1000);
-  return issuer.sign({ iss: ISSUER, aud: AUD, sub: "hash-of-cj", preferred_username: "CJackson", email: "CJackson@guysinc.org", iat: now, exp: now + 3600, ...overrides }, kid);
+type Cred = { bearer: string } | { cookie: string } | { jwt: string };
+const CJ: Cred = { bearer: "glsa_cj" };
+const DM: Cred = { bearer: "glsa_dm" };
+
+function credHeaders(cred: Cred, origin = GRAFANA): Record<string, string> {
+  const h: Record<string, string> = { "x-grafana-url": origin };
+  if ("bearer" in cred) h.authorization = `Bearer ${cred.bearer}`;
+  else if ("cookie" in cred) h.cookie = `grafana_session=${cred.cookie}`;
+  else h["x-jwt-assertion"] = cred.jwt;
+  return h;
 }
 
-async function register(token: string, jwt: string, extra: Record<string, unknown> = {}) {
+async function register(token: string, cred: Cred, extra: Record<string, unknown> = {}, origin = GRAFANA) {
   return call(
     new Request("https://relay.test/devices", {
       method: "POST",
-      headers: { authorization: `Bearer ${jwt}`, "content-type": "application/json" },
+      headers: { ...credHeaders(cred, origin), "content-type": "application/json" },
       body: JSON.stringify({ token, platform: "ios", environment: "production", name: "CJ's iPhone", ...extra }),
     }),
   );
 }
-
-/** Outbound fetches are stubbed per origin; anything unexpected throws. */
-type Handler = (req: Request) => Promise<Response> | Response;
-const outbound: Array<{ origin: string; handler: Handler }> = [];
-const realFetch = globalThis.fetch;
 
 /** Let APNs answer; returns the requests it saw. */
 function apnsAnswers(status: number, reason?: string, host = "https://api.push.apple.com") {
@@ -69,13 +96,10 @@ function apnsAnswers(status: number, reason?: string, host = "https://api.push.a
 }
 
 beforeAll(async () => {
-  issuer = await makeIssuer();
   testEnv = {
     ...env,
-    JWKS_URL,
-    JWT_ISSUER: ISSUER,
-    JWT_AUDIENCE: AUD,
-    ROUTES: JSON.stringify({ "site=meade-manor": "DMeade", "host=~ovh|oc-.*": ["cjackson", "dmeade"], "*": "cjackson" }),
+    GRAFANA_URLS: `${GRAFANA}, https://other.test`,
+    ROUTES: JSON.stringify({ "site=meade-manor": "dmeade@damp.meme", "host=~ovh|oc-.*": ["cjackson@guysinc.org", "dmeade"], "*": "CJackson@guysinc.org" }),
     WEBHOOK_SECRET: SECRET,
     APNS_KEY: await makeApnsKeyPem(),
     APNS_KEY_ID: "TESTKEYID",
@@ -97,7 +121,7 @@ afterAll(() => {
 
 beforeEach(async () => {
   outbound.length = 0;
-  outbound.push({ origin: "https://keystone.test", handler: () => Response.json(issuer.jwks) });
+  stubGrafana();
   // a clean registry per test
   const list = await env.DEVICES.list();
   await Promise.all(list.keys.map((k) => env.DEVICES.delete(k.name)));
@@ -108,7 +132,7 @@ describe("health", () => {
     const res = await call(new Request("https://relay.test/health"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toMatchObject({ ok: true, kv: "ok", apns: true, webhook: true });
+    expect(body).toMatchObject({ ok: true, kv: "ok", apns: true, webhook: true, grafana: [GRAFANA, "https://other.test"] });
     expect(typeof body.version).toBe("string");
   });
 
@@ -172,46 +196,61 @@ describe("POST /grafana signature", () => {
 });
 
 describe("devices", () => {
-  it("registers, lists and forgets a device for the token's user, lower-cased", async () => {
-    const jwt = await idToken();
-    const reg = await register(TOKEN_A, jwt);
+  it("registers, lists and forgets a device for the Grafana user, lower-cased", async () => {
+    const reg = await register(TOKEN_A, CJ);
     expect(reg.status).toBe(200);
-    expect(await reg.json()).toMatchObject({ ok: true, user: "cjackson", devices: 1 });
+    expect(await reg.json()).toMatchObject({ ok: true, user: "cjackson@guysinc.org", devices: 1 });
 
-    // idempotent
-    await register(TOKEN_A, jwt);
-    const list = (await (await call(new Request("https://relay.test/devices", { headers: { authorization: `Bearer ${jwt}` } }))).json()) as { devices: unknown[] };
+    // idempotent, and the same person through a session cookie or an OIDC token is the same user
+    await register(TOKEN_A, { cookie: "sess-cj" });
+    await register(TOKEN_A, { jwt: "id-token-cj" });
+    const list = (await (await call(new Request("https://relay.test/devices", { headers: credHeaders(CJ) }))).json()) as { devices: unknown[] };
     expect(list.devices).toHaveLength(1);
 
-    const del = await call(new Request(`https://relay.test/devices/${TOKEN_A}`, { method: "DELETE", headers: { authorization: `Bearer ${jwt}` } }));
+    const del = await call(new Request(`https://relay.test/devices/${TOKEN_A}`, { method: "DELETE", headers: credHeaders(CJ) }));
     expect(await del.json()).toMatchObject({ ok: true, removed: true });
-    expect(await env.DEVICES.get("devices/cjackson")).toBeNull();
+    expect(await env.DEVICES.get("devices/cjackson@guysinc.org")).toBeNull();
   });
 
-  it("rejects a token from another issuer, an expired one, a wrong audience, an unknown key and a bad signature", async () => {
-    const cases = [
-      await idToken({ iss: "https://elsewhere.test/" }),
-      await idToken({ exp: Math.floor(Date.now() / 1000) - 120 }),
-      await idToken({ aud: "someone-else" }),
-      await idToken({}, "unknown-kid"),
-      (await idToken()).slice(0, -8) + "AAAAAAAA",
-    ];
-    for (const jwt of cases) {
-      const res = await register(TOKEN_A, jwt);
-      expect(res.status, jwt).toBe(401);
-    }
-    expect(await register(TOKEN_A, "")).toHaveProperty("status", 401);
+  it("files an email alias so ROUTES may name the person by either", async () => {
+    await register(TOKEN_D, DM);
+    expect(await env.DEVICES.get("alias/dmeade@damp.meme")).toBe("dmeade");
+    expect(await env.DEVICES.get("devices/dmeade", "json")).toHaveLength(1);
+  });
+
+  it("rejects a credential Grafana does not know, and a call with no or two credentials", async () => {
+    expect((await register(TOKEN_A, { bearer: "glsa_nope" })).status).toBe(401);
+    expect((await register(TOKEN_A, { cookie: "stale" })).status).toBe(401);
+    const none = await call(new Request("https://relay.test/devices", { method: "POST", headers: { "x-grafana-url": GRAFANA, "content-type": "application/json" }, body: "{}" }));
+    expect(none.status).toBe(401);
+    const two = await call(new Request("https://relay.test/devices", { method: "POST", headers: { ...credHeaders(CJ), cookie: "grafana_session=sess-cj", "content-type": "application/json" }, body: "{}" }));
+    expect(two.status).toBe(401);
+  });
+
+  it("refuses a Grafana the relay does not serve, and a non-https one", async () => {
+    const res = await register(TOKEN_A, CJ, {}, "https://stranger.test");
+    expect(res.status).toBe(403);
+    expect(await res.json()).toMatchObject({ error: "this relay does not serve https://stranger.test" });
+    expect((await register(TOKEN_A, CJ, {}, "http://grafana.test")).status).toBe(401);
+    const missing = await call(new Request("https://relay.test/devices", { method: "POST", headers: { authorization: "Bearer glsa_cj", "content-type": "application/json" }, body: "{}" }));
+    expect(missing.status).toBe(401);
+  });
+
+  it("answers 502 when that Grafana cannot be reached", async () => {
+    outbound.length = 0; // no stub at all
+    const res = await register(TOKEN_A, CJ);
+    expect(res.status).toBe(502);
   });
 
   it("rejects a token that is not an APNs hex token", async () => {
-    const res = await register("not-hex", await idToken());
+    const res = await register("not-hex", CJ);
     expect(res.status).toBe(400);
   });
 });
 
 describe("delivery", () => {
   it("pushes a firing alert to the default owner with the right headers and payload, then dedupes the repeat", async () => {
-    await register(TOKEN_A, await idToken());
+    await register(TOKEN_A, CJ);
     const seen = apnsAnswers(200);
 
     const first = await signedWebhook(grafanaWebhook([{}]));
@@ -232,7 +271,7 @@ describe("delivery", () => {
   });
 
   it("pushes the resolved state under the same collapse id, without a sound, and a warn alert at the active level", async () => {
-    await register(TOKEN_A, await idToken());
+    await register(TOKEN_A, CJ);
     const seen = apnsAnswers(200);
     await signedWebhook(grafanaWebhook([{ status: "resolved", endsAt: "2026-09-29T00:10:00Z" }, { fingerprint: "c0ffee0000000001", labels: { alertname: "Disk full within 7 days", grafana_folder: "Estate", host: "ovh", severity: "warn" }, annotations: {} }]));
     expect(seen).toHaveLength(2); // resolved -> cjackson; warn on ovh -> cjackson + dmeade, and dmeade has no devices
@@ -243,9 +282,9 @@ describe("delivery", () => {
     expect(resolved.aps["interruption-level"]).toBe("active");
   });
 
-  it("routes by label: a meade-manor alert reaches dmeade's phone, not cjackson's", async () => {
-    await register(TOKEN_A, await idToken());
-    await register(TOKEN_D, await idToken({ preferred_username: "DMeade", sub: "hash-of-dm" }));
+  it("routes by label: a meade-manor alert reaches Daniel's phone (named by email in ROUTES), not CJ's", async () => {
+    await register(TOKEN_A, CJ);
+    await register(TOKEN_D, DM);
     const seen = apnsAnswers(200);
     const res = await signedWebhook(grafanaWebhook([{ labels: { alertname: "Host stopped reporting", grafana_folder: "Meade Manor", host: "meade-monster", severity: "page", site: "meade-manor" } }]));
     expect(await res.json()).toMatchObject({ pushed: 1 });
@@ -253,30 +292,30 @@ describe("delivery", () => {
   });
 
   it("uses the sandbox host for a sandbox device", async () => {
-    await register(TOKEN_B, await idToken(), { environment: "sandbox" });
+    await register(TOKEN_B, CJ, { environment: "sandbox" });
     const seen = apnsAnswers(200, undefined, "https://api.sandbox.push.apple.com");
     await signedWebhook(grafanaWebhook([{}]));
     expect(seen).toHaveLength(1);
   });
 
   it("drops a device Apple says is gone (410) and keeps one that merely failed (500)", async () => {
-    await register(TOKEN_A, await idToken());
+    await register(TOKEN_A, CJ);
     let seen = apnsAnswers(500, "InternalServerError");
     let res = await signedWebhook(grafanaWebhook([{}]));
     expect(await res.json()).toMatchObject({ pushed: 0, failed: 1, dropped: 0 });
     expect(seen).toHaveLength(1);
-    expect(await env.DEVICES.get("devices/cjackson", "json")).toHaveLength(1);
+    expect(await env.DEVICES.get("devices/cjackson@guysinc.org", "json")).toHaveLength(1);
 
     seen = apnsAnswers(410, "Unregistered");
     res = await signedWebhook(grafanaWebhook([{}]));
     expect(await res.json()).toMatchObject({ pushed: 0, dropped: 1 });
-    expect(await env.DEVICES.get("devices/cjackson")).toBeNull();
+    expect(await env.DEVICES.get("devices/cjackson@guysinc.org")).toBeNull();
     // and nothing was recorded as sent, so a new device would still hear about it
     expect(await env.DEVICES.get("sent/b69ade466fb0e990:firing:2026-09-28T23:53:50Z")).toBeNull();
   });
 
   it("accepts the webhook but sends nothing while APNs is unconfigured", async () => {
-    await register(TOKEN_A, await idToken());
+    await register(TOKEN_A, CJ);
     const saved = testEnv.APNS_KEY;
     testEnv.APNS_KEY = undefined;
     const res = await signedWebhook(grafanaWebhook([{}]));
@@ -288,7 +327,7 @@ describe("delivery", () => {
   it("counts an alert nobody is routed to", async () => {
     testEnv.ROUTES = JSON.stringify({ "site=meade-manor": "dmeade" });
     const res = await signedWebhook(grafanaWebhook([{}]));
-    testEnv.ROUTES = JSON.stringify({ "site=meade-manor": "DMeade", "host=~ovh|oc-.*": ["cjackson", "dmeade"], "*": "cjackson" });
+    testEnv.ROUTES = JSON.stringify({ "site=meade-manor": "dmeade@damp.meme", "host=~ovh|oc-.*": ["cjackson@guysinc.org", "dmeade"], "*": "CJackson@guysinc.org" });
     expect(await res.json()).toMatchObject({ unrouted: 1, pushed: 0 });
   });
 });

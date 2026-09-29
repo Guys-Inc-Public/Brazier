@@ -9,12 +9,11 @@
   "kv_namespaces": [{ "binding": "DEVICES", "id": "66a331538cd347f1b026da1f61090bea" }],
   "observability": { "enabled": true },
   "vars": {
-    // Where the app's sign-in tokens come from. The relay verifies them against this JWKS.
-    "JWKS_URL": "https://keystone.gicloud.org/application/o/brazier/jwks/",
-    "JWT_ISSUER": "https://keystone.gicloud.org/application/o/brazier/",
-    "JWT_AUDIENCE": "vgG1mB1fiCSYrsS2Y7zK7CMd5GdlE5USYP5tIqJh",
-    // Label matcher -> user (preferred_username). "*" is the default owner. A value may be a list.
-    "ROUTES": "{\"site=meade-manor\":\"dmeade\",\"*\":\"cjackson\"}",
+    // The Grafana origins this relay serves. A device may only register through one of these; the relay asks
+    // that Grafana who the caller is. Comma separated for several.
+    "GRAFANA_URLS": "https://grafana.gicloud.org",
+    // Label matcher -> Grafana user (login or email). "*" is the default owner. A value may be a list.
+    "ROUTES": "{\"site=meade-manor\":\"dmeade@damp.meme\",\"*\":\"cjackson@guysinc.org\"}",
     "APNS_TEAM_ID": "7VM43528YK",
     "APNS_TOPIC": "org.guysinc.brazier",
     // The APNs key id; the key itself is the APNS_KEY secret. Empty until the key exists.

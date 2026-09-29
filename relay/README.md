@@ -4,13 +4,13 @@ Grafana's webhook in, Apple's push out. One Cloudflare Worker, one KV namespace,
 
 ```
 Grafana contact point ──HMAC──▶ POST /grafana ──▶ KV: sent? routes? devices ──▶ APNs
-Brazier app ──Bearer ID token──▶ POST /devices, DELETE /devices/:token
+Brazier app ──its Grafana credential──▶ POST /devices ──▶ that Grafana's /api/user says who
 ```
 
 | Route | Auth | Does |
 |---|---|---|
 | `POST /grafana` | `X-Grafana-Alerting-Signature`: HMAC-SHA256 hex over `<timestamp>:<body>` (or the body alone without a timestamp header), constant-time compare | Per alert: skip if already sent for this fingerprint, status and start time; route the labels to users; push to each of their devices; forget devices Apple reports gone |
-| `POST /devices` | `Authorization: Bearer <OIDC ID token>` verified against `JWKS_URL`, `JWT_ISSUER`, `JWT_AUDIENCE` | Body `{ "token": "<APNs hex>", "platform": "ios", "environment": "production" \| "sandbox", "name": "…" }`. Idempotent. The user key is `preferred_username`, lower case |
+| `POST /devices` | Headers `X-Grafana-Url: <origin>` and exactly one of `Authorization: Bearer <service account token>`, `Cookie: grafana_session=<value>`, `X-JWT-Assertion: <OIDC token>`: the same credential the app uses for Grafana. The relay asks that Grafana `/api/user` who it is; the origin must be on `GRAFANA_URLS` | Body `{ "token": "<APNs hex>", "platform": "ios", "environment": "production" \| "sandbox", "name": "…" }`. Idempotent. Devices are filed under the Grafana login, with the email as an alias |
 | `GET /devices` | same | The caller's devices, tokens elided |
 | `DELETE /devices/:token` | same | Forget one device |
 | `GET /health` | none | `{ ok, version, kv, apns, webhook }` |
@@ -18,7 +18,7 @@ Brazier app ──Bearer ID token──▶ POST /devices, DELETE /devices/:token
 ## Run it yourself
 
 1. Copy `wrangler.jsonc`, change `name`, `account_id`, the KV namespace id (`wrangler kv namespace create DEVICES`) and the route.
-2. Set the vars: `JWKS_URL`, `JWT_ISSUER`, `JWT_AUDIENCE` for your identity provider's app; `ROUTES` (see below); `APNS_TEAM_ID`, `APNS_TOPIC`, `APNS_KEY_ID`.
+2. Set the vars: `GRAFANA_URLS` (your Grafana's origin; the relay refuses to talk to any other), `ROUTES` (see below), `APNS_TEAM_ID`, `APNS_TOPIC`, `APNS_KEY_ID`.
 3. `wrangler secret put WEBHOOK_SECRET` (any random string; the same value goes on the Grafana contact point) and `wrangler secret put APNS_KEY < AuthKey_XXXX.p8`.
 4. `npm install && npm test && npm run deploy`.
 5. In Grafana: a webhook contact point at `https://<relay>/grafana` with **HMAC signature** on, secret = `WEBHOOK_SECRET`, header `X-Grafana-Alerting-Signature`, timestamp header `X-Grafana-Alerting-Timestamp`. Point a notification policy at it.
@@ -27,10 +27,10 @@ The APNs key belongs to the Apple developer account that ships the app. Until th
 
 ## Routes
 
-`ROUTES` is JSON: a label matcher to a user or list of users, first match wins, `*` is the default owner.
+`ROUTES` is JSON: a label matcher to a Grafana user (login or email) or a list of them, first match wins, `*` is the default owner.
 
 ```json
-{ "site=meade-manor": "dmeade", "host=~ovh|oc-.*": ["cjackson", "dmeade"], "*": "cjackson" }
+{ "site=meade-manor": "daniel@example.com", "host=~ovh|oc-.*": ["cam@example.com", "daniel@example.com"], "*": "cam@example.com" }
 ```
 
 ## What a push carries
@@ -39,4 +39,4 @@ The APNs key belongs to the Apple developer account that ships the app. Until th
 
 ## Tests
 
-`npm test` runs in the Workers runtime (vitest-pool-workers): signature good, bad, tampered and missing, Grafana 13.2's own captured webhook (`test/capture.json`), device registration with good and bad tokens, routing, dedupe, sandbox vs production, a 410 from Apple dropping the device, and an unconfigured relay accepting webhooks without sending.
+`npm test` runs in the Workers runtime (vitest-pool-workers): signature good, bad, tampered and missing, Grafana 13.2's own captured webhook (`test/capture.json`), device registration through a stub Grafana with token, session and OIDC credentials, unknown credentials, a Grafana not on the allow list, an unreachable one, the email alias, routing, dedupe, sandbox vs production, a 410 from Apple dropping the device, and an unconfigured relay accepting webhooks without sending.

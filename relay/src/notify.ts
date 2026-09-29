@@ -2,7 +2,7 @@
 import type { Env } from "./env";
 import { SENT_TTL_SECONDS, apnsConfigured } from "./env";
 import { parseRoutes, routeUsers } from "./routing";
-import { listDevices, removeDevice } from "./devices";
+import { listDevices, removeDevice, resolveUser } from "./devices";
 import { sendPush, type ApnsConfig } from "./apns";
 
 /** The parts of Grafana's webhook body the relay reads. */
@@ -121,7 +121,8 @@ export async function deliver(env: Env, wh: GrafanaWebhook): Promise<Outcome> {
     if (!cfg) continue; // accepted, nothing to send with yet
     const payload = buildPayload(alert, wh.externalURL);
     let accepted = 0;
-    for (const user of users) {
+    for (const name of users) {
+      const user = await resolveUser(env.DEVICES, name);
       for (const device of await listDevices(env.DEVICES, user)) {
         const r = await sendPush(cfg, device.token, device.environment, { collapseId: alert.fingerprint, payload });
         if (r.status === 200) {

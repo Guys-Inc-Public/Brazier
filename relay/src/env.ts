@@ -1,9 +1,8 @@
 /** Bindings and settings. Vars live in wrangler.jsonc, secrets in `wrangler secret put`. */
 export interface Env {
   DEVICES: KVNamespace;
-  JWKS_URL: string;
-  JWT_ISSUER: string;
-  JWT_AUDIENCE?: string;
+  /** Comma-separated Grafana origins this relay serves; device registration is refused for any other. */
+  GRAFANA_URLS: string;
   ROUTES: string;
   APNS_TEAM_ID: string;
   APNS_TOPIC: string;
@@ -12,7 +11,7 @@ export interface Env {
   APNS_KEY?: string;
 }
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 /** Seven days, in seconds: how long a sent firing/resolved pair is remembered for dedupe. */
 export const SENT_TTL_SECONDS = 7 * 24 * 60 * 60;

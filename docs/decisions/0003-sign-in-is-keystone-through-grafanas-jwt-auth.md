@@ -9,7 +9,7 @@ status: accepted
 
 # 0003 · Sign-in is Keystone through Grafana's JWT auth
 
-**Status:** accepted, 2026-09-28.
+**Status:** accepted, 2026-09-28; the sign-in half is superseded by 0004 on 2026-09-29 (Grafana's own login page is the default, this path is the advanced option).
 
 ## Context
 Grafana behind SSO has no password to give a phone. Grafana OSS accepts a JWT in a request header and maps it to a user.

@@ -1,27 +1,36 @@
 /** Brazier relay: Grafana's webhook in, Apple's push out. Routes:
  *    POST   /grafana           HMAC-signed webhook from a Grafana contact point
- *    POST   /devices           register this device (Bearer: the app's OIDC ID token)
- *    DELETE /devices/:token    forget it
- *    GET    /health            liveness, version, whether APNs is configured
+ *    POST   /devices           register this device; the caller proves who they are with the same
+ *                              credential the app uses for Grafana (headers, see identity.ts)
+ *    GET    /devices           the caller's devices
+ *    DELETE /devices/:token    forget one
+ *    GET    /health            liveness, version, whether APNs and the secret are configured
  */
 import { type Env, VERSION, json, apnsConfigured } from "./env";
 import { verifyGrafanaSignature } from "./hmac";
-import { verifyJwt, userKey } from "./jwt";
 import { parseWebhook, deliver } from "./notify";
 import { listDevices, normaliseToken, putDevice, removeDevice, type Device } from "./devices";
+import { allowedOrigins, readCredential, whoAmI, type GrafanaUser } from "./identity";
 
 const SIGNATURE_HEADER = "x-grafana-alerting-signature";
 const TIMESTAMP_HEADER = "x-grafana-alerting-timestamp";
 
-async function authUser(req: Request, env: Env): Promise<string | Response> {
-  const auth = req.headers.get("authorization") ?? "";
-  const m = /^Bearer\s+(.+)$/i.exec(auth);
-  if (!m) return json({ error: "bearer token required" }, 401, { "www-authenticate": "Bearer" });
+/** Identify the caller through their Grafana, or answer why not. */
+async function caller(req: Request, env: Env): Promise<GrafanaUser | Response> {
+  const read = readCredential(req);
+  if ("error" in read) return json({ error: read.error }, 401);
+  let allowed: Set<string>;
   try {
-    const claims = await verifyJwt(m[1].trim(), { jwksUrl: env.JWKS_URL, issuer: env.JWT_ISSUER, audience: env.JWT_AUDIENCE || undefined });
-    return userKey(claims).toLowerCase();
+    allowed = allowedOrigins(env.GRAFANA_URLS);
   } catch (e) {
-    return json({ error: `token rejected: ${(e as Error).message}` }, 401, { "www-authenticate": "Bearer" });
+    return json({ error: (e as Error).message }, 500);
+  }
+  if (!allowed.has(read.origin)) return json({ error: `this relay does not serve ${read.origin}` }, 403);
+  try {
+    return await whoAmI(read.origin, read.credential);
+  } catch (e) {
+    const msg = (e as Error).message;
+    return json({ error: msg }, msg.includes("rejected") ? 401 : 502);
   }
 }
 
@@ -42,8 +51,8 @@ async function handleGrafana(req: Request, env: Env): Promise<Response> {
 }
 
 async function handleRegister(req: Request, env: Env): Promise<Response> {
-  const user = await authUser(req, env);
-  if (user instanceof Response) return user;
+  const who = await caller(req, env);
+  if (who instanceof Response) return who;
   let body: Partial<Device>;
   try {
     body = (await req.json()) as Partial<Device>;
@@ -54,24 +63,24 @@ async function handleRegister(req: Request, env: Env): Promise<Response> {
   if (!token) return json({ error: "token must be the APNs device token in hex" }, 400);
   const environment = body.environment === "sandbox" ? "sandbox" : "production";
   const name = typeof body.name === "string" ? body.name.slice(0, 80) : "iPhone";
-  const devices = await putDevice(env.DEVICES, user, { token, platform: "ios", environment, name, added: new Date().toISOString() });
-  return json({ ok: true, user, devices: devices.length });
+  const devices = await putDevice(env.DEVICES, who.login, who.email, { token, platform: "ios", environment, name, added: new Date().toISOString(), grafana: who.origin });
+  return json({ ok: true, user: who.login, devices: devices.length });
 }
 
 async function handleForget(req: Request, env: Env, rawToken: string): Promise<Response> {
-  const user = await authUser(req, env);
-  if (user instanceof Response) return user;
+  const who = await caller(req, env);
+  if (who instanceof Response) return who;
   const token = normaliseToken(rawToken);
   if (!token) return json({ error: "bad token" }, 400);
-  const removed = await removeDevice(env.DEVICES, user, token);
+  const removed = await removeDevice(env.DEVICES, who.login, token);
   return json({ ok: true, removed });
 }
 
 async function handleList(req: Request, env: Env): Promise<Response> {
-  const user = await authUser(req, env);
-  if (user instanceof Response) return user;
-  const devices = await listDevices(env.DEVICES, user);
-  return json({ user, devices: devices.map((d) => ({ name: d.name, environment: d.environment, added: d.added, token: `…${d.token.slice(-6)}` })) });
+  const who = await caller(req, env);
+  if (who instanceof Response) return who;
+  const devices = await listDevices(env.DEVICES, who.login);
+  return json({ user: who.login, devices: devices.map((d) => ({ name: d.name, environment: d.environment, added: d.added, token: `…${d.token.slice(-6)}` })) });
 }
 
 async function handleHealth(env: Env): Promise<Response> {
@@ -82,7 +91,7 @@ async function handleHealth(env: Env): Promise<Response> {
     kv = "error";
   }
   const ok = kv === "ok";
-  return json({ ok, version: VERSION, kv, apns: apnsConfigured(env), webhook: Boolean(env.WEBHOOK_SECRET) }, ok ? 200 : 503);
+  return json({ ok, version: VERSION, kv, apns: apnsConfigured(env), webhook: Boolean(env.WEBHOOK_SECRET), grafana: [...allowedOrigins(env.GRAFANA_URLS)] }, ok ? 200 : 503);
 }
 
 export default {

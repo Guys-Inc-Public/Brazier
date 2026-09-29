@@ -1,4 +1,4 @@
-/** Test-only crypto: an RSA key pair to play Keystone, a P-256 key to play our APNs key. */
+/** Test-only crypto: a P-256 key to play our APNs key, and a Grafana webhook fixture. */
 
 const enc = new TextEncoder();
 
@@ -6,30 +6,6 @@ export function b64url(bytes: Uint8Array): string {
   let s = "";
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-export interface Issuer {
-  jwks: { keys: JsonWebKey[] };
-  sign: (claims: Record<string, unknown>, kid?: string) => Promise<string>;
-}
-
-export async function makeIssuer(kid = "test-key"): Promise<Issuer> {
-  const pair = (await crypto.subtle.generateKey(
-    { name: "RSASSA-PKCS1-v1_5", modulusLength: 2048, publicExponent: new Uint8Array([1, 0, 1]), hash: "SHA-256" },
-    true,
-    ["sign", "verify"],
-  )) as CryptoKeyPair;
-  const pub = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as JsonWebKey;
-  const jwks = { keys: [{ kty: pub.kty, n: pub.n, e: pub.e, alg: "RS256", use: "sig", kid }] };
-  return {
-    jwks,
-    async sign(claims, useKid = kid) {
-      const header = b64url(enc.encode(JSON.stringify({ alg: "RS256", kid: useKid, typ: "JWT" })));
-      const body = b64url(enc.encode(JSON.stringify(claims)));
-      const sig = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", pair.privateKey, enc.encode(`${header}.${body}`));
-      return `${header}.${body}.${b64url(new Uint8Array(sig))}`;
-    },
-  };
 }
 
 /** A PKCS#8 PEM for a fresh P-256 key, shaped like Apple's .p8 file. */
