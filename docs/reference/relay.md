@@ -14,13 +14,14 @@ review: each release of the relay
 | `GET /devices` | same | The caller's devices, tokens elided, each with its `prefs` (`{}` when none) |
 | `PUT /devices/:token/preferences` | same | Body = the preferences object below; replaces the device's preferences whole; `{ ok, prefs }`; 400 with the reason for a bad field, 404 when the token is not filed under the caller |
 | `DELETE /devices/:token` | same | Removes it; called on sign-out and when a server is removed |
-| `GET /health` | none | 200, version, KV reachable, whether APNs and the webhook secret are configured, the served Grafanas |
+| `GET /health` | none | 200, version, KV reachable, whether APNs is configured and from where (`push`: `key`, `grant` or `none`), whether the webhook secret is set, the served Grafanas |
 | `GET /.well-known/brazier` | none | Discovery: `{ relay: { url, version }, grafana: { <origin>: { signIn?: { issuer, clientId, name } } } }`. Served on the relay and, through a Worker route, on `grafana.gicloud.org/.well-known/brazier`, so the app finds the relay and the sign-in from the Grafana address alone; a DNS TXT `_brazier.<host>` is the alternative signpost. When `signIn` is present the app offers "Sign in with <name>" through the system sheet (passkeys work there; they do not in an in-app web view) |
 
 | Setting | Value | Kept where |
 |---|---|---|
 | `WEBHOOK_SECRET` | random 32 bytes, also on the Grafana contact point | wrangler secret |
-| `APNS_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` | the .p8, its id, the team, the bundle id; replaced by the push grant in a self-hosted relay | wrangler secrets |
+| `APNS_KEY`, `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC` | the .p8, its id, the team, the bundle id: ours. A self-hosted relay sets the two below instead | `APNS_KEY` a wrangler secret, the rest vars |
+| `PUSH_GRANT_URL`, `PUSH_GRANT_KEY` | the push grant (`https://grant.brazier.gicloud.org`) and the relay key it handed out at registration (decision 0005); the relay borrows a 50-minute provider token from it, kept in KV as `grant/token` and refreshed five minutes before it lapses | var, wrangler secret |
 | `GRAFANA_URLS` | the Grafana origins this relay serves, comma separated; the estate's is `https://grafana.gicloud.org` | wrangler var |
 | `SIGN_IN` | JSON, Grafana origin → `{ issuer, clientId, name }`; the estate's points at Keystone's `brazier` client (provider 46) with name Guys Inc | wrangler var |
 | `RELAY_URL` | this relay's public address, named in the discovery document (`https://brazier.gicloud.org`) | wrangler var |
@@ -34,4 +35,4 @@ Preferences, per device (`prefs`), applied at send time so a phone's choice neve
 
 Payload: title = alert name (`Resolved: …` when resolved); body = `summary` annotation or the first label pair; subtitle = org (when `ORGS` names it), site and host; thread-id = folder; category `ALERT` so the app offers Silence as an action; `severity=page` sets the time-sensitive interruption level, everything else is active; resolved pushes reuse the collapse-id and carry no sound. A top-level `brazier` object carries fingerprint, status, labels, annotations, `generatorURL`, `silenceURL`, `externalURL`, folder, `orgId` and `org` for the app.
 
-Code: `relay/` in this repository, tests in `relay/test/`, deploy notes in `relay/README.md`. Live at `https://brazier.gicloud.org` (Worker `brazier-relay`).
+Code: `relay/` in this repository, tests in `relay/test/`, deploy notes in `relay/README.md`. Live at `https://brazier.gicloud.org` (Worker `brazier-relay`). The push grant that lends a self-hosted relay our key is `grant/`, live at `https://grant.brazier.gicloud.org` (Worker `brazier-grant`), decision 0005.

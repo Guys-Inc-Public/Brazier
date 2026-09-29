@@ -6,12 +6,12 @@
  *    GET    /devices           the caller's devices, with their preferences
  *    PUT    /devices/:token/preferences  what that device wants: orgs, a severity floor, quiet hours
  *    DELETE /devices/:token    forget one
- *    GET    /health            liveness, version, whether APNs and the secret are configured
+ *    GET    /health            liveness, version, whether APNs (own key or push grant) and the secret are configured
  *    GET    /.well-known/brazier  discovery: this relay's address, the Grafanas it serves and how the app
  *                              signs in to them. Also served on each Grafana's own hostname through a
  *                              Worker route, so the app finds everything from the Grafana address alone.
  */
-import { type Env, VERSION, json, apnsConfigured } from "./env";
+import { type Env, VERSION, json, apnsConfigured, pushSource } from "./env";
 import { verifyGrafanaSignature, verifyBasicSecret } from "./hmac";
 import { parseWebhook, deliver } from "./notify";
 import { listDevices, normaliseToken, putDevice, removeDevice, setPrefs, type Device, type Prefs } from "./devices";
@@ -180,7 +180,7 @@ async function handleHealth(env: Env): Promise<Response> {
     kv = "error";
   }
   const ok = kv === "ok";
-  return json({ ok, version: VERSION, kv, apns: apnsConfigured(env), webhook: Boolean(env.WEBHOOK_SECRET), grafana: [...allowedOrigins(env.GRAFANA_URLS)] }, ok ? 200 : 503);
+  return json({ ok, version: VERSION, kv, apns: apnsConfigured(env), push: pushSource(env), webhook: Boolean(env.WEBHOOK_SECRET), grafana: [...allowedOrigins(env.GRAFANA_URLS)] }, ok ? 200 : 503);
 }
 
 export default {

@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "brazier-grant",
+  // Guys Inc's account: this Worker is ours alone, it holds the APNs key for the app.
+  "account_id": "b91113eccd05a2abae65f95733a9403e",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-08-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "kv_namespaces": [{ "binding": "RELAYS", "id": "93ff6b4fff214ccf80a08f8f4d849256" }],
+  "observability": { "enabled": true },
+  "vars": {
+    "APNS_TEAM_ID": "7VM43528YK",
+    "APNS_TOPIC": "org.guysinc.brazier",
+    "APNS_KEY_ID": "PTDYNZWJJJ"
+  },
+  // Secret, set with `wrangler secret put`: APNS_KEY (the .p8)
+  "routes": [{ "pattern": "grant.brazier.gicloud.org", "custom_domain": true }]
+}

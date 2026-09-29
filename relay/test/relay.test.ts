@@ -2,7 +2,7 @@ import { env, createExecutionContext, waitOnExecutionContext } from "cloudflare:
 import { buildPayload, sentKey } from "../src/notify";
 import { readPrefs } from "../src/index";
 import { inQuietHours, level, localMinutes, meets } from "../src/severity";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import worker from "../src/index";
 import type { Env } from "../src/env";
 import { signLikeGrafana } from "../src/hmac";
@@ -139,7 +139,7 @@ describe("health", () => {
     const res = await call(new Request("https://relay.test/health"));
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
-    expect(body).toMatchObject({ ok: true, kv: "ok", apns: true, webhook: true, grafana: [GRAFANA, "https://other.test"] });
+    expect(body).toMatchObject({ ok: true, kv: "ok", apns: true, push: "key", webhook: true, grafana: [GRAFANA, "https://other.test"] });
     expect(typeof body.version).toBe("string");
   });
 
@@ -149,6 +149,85 @@ describe("health", () => {
     const body = (await (await call(new Request("https://relay.test/health"))).json()) as Record<string, unknown>;
     testEnv.APNS_KEY = saved;
     expect(body.apns).toBe(false);
+    expect(body.push).toBe("none");
+  });
+});
+
+describe("push grant", () => {
+  const GRANT = "https://grant.test";
+  let savedKey: string | undefined;
+
+  /** The grant answers tokens; returns the requests it saw. */
+  function grantAnswers(status = 200, expiresIn = 3000) {
+    const seen: Array<{ auth: string | null; agent: string | null }> = [];
+    outbound.push({
+      origin: GRANT,
+      handler: (req) => {
+        seen.push({ auth: req.headers.get("authorization"), agent: req.headers.get("user-agent") });
+        const now = Math.floor(Date.now() / 1000);
+        return status === 200
+          ? Response.json({ token: `granted-${seen.length}`, keyId: "PTDYNZWJJJ", teamId: "7VM43528YK", topic: "org.guysinc.brazier", issuedAt: now, expiresAt: now + expiresIn })
+          : Response.json({ error: "unknown relay key" }, { status });
+      },
+    });
+    return seen;
+  }
+
+  beforeEach(() => {
+    savedKey = testEnv.APNS_KEY;
+    testEnv.APNS_KEY = undefined;
+    testEnv.PUSH_GRANT_URL = `${GRANT}/`;
+    testEnv.PUSH_GRANT_KEY = "relay-key-123";
+  });
+  afterEach(() => {
+    testEnv.APNS_KEY = savedKey;
+    testEnv.PUSH_GRANT_URL = undefined;
+    testEnv.PUSH_GRANT_KEY = undefined;
+  });
+
+  it("counts as configured with only the grant settings, and health says so", async () => {
+    const body = (await (await call(new Request("https://relay.test/health"))).json()) as Record<string, unknown>;
+    expect(body.apns).toBe(true);
+    expect(body.push).toBe("grant");
+  });
+
+  it("borrows a token from the grant, pushes with it, and keeps it in KV for the next push", async () => {
+    const grants = grantAnswers();
+    const apns = apnsAnswers(200);
+    expect((await register(TOKEN_A, CJ)).status).toBe(200);
+    const first = await signedWebhook(grafanaWebhook([{ fingerprint: "f1" }]));
+    expect(await first.json()).toMatchObject({ pushed: 1, failed: 0 });
+    expect(grants).toEqual([{ auth: "Bearer relay-key-123", agent: "brazier-relay" }]);
+    expect(apns[0].headers.authorization).toBe("bearer granted-1");
+    expect(apns[0].headers["apns-topic"]).toBe("org.guysinc.brazier");
+    const kept = (await env.DEVICES.get("grant/token", "json")) as { token: string };
+    expect(kept.token).toBe("granted-1");
+    const second = await signedWebhook(grafanaWebhook([{ fingerprint: "f2" }]));
+    expect(await second.json()).toMatchObject({ pushed: 1 });
+    expect(grants).toHaveLength(1);
+    expect(apns[1].headers.authorization).toBe("bearer granted-1");
+  });
+
+  it("asks for a fresh token when the kept one is about to lapse", async () => {
+    const grants = grantAnswers();
+    const apns = apnsAnswers(200);
+    const now = Math.floor(Date.now() / 1000);
+    await env.DEVICES.put("grant/token", JSON.stringify({ token: "stale", keyId: "K", teamId: "T", topic: "org.guysinc.brazier", issuedAt: now - 2900, expiresAt: now + 100 }));
+    expect((await register(TOKEN_A, CJ)).status).toBe(200);
+    await signedWebhook(grafanaWebhook([{ fingerprint: "f3" }]));
+    expect(grants).toHaveLength(1);
+    expect(apns[0].headers.authorization).toBe("bearer granted-1");
+  });
+
+  it("keeps the device and counts a failure when the grant refuses", async () => {
+    grantAnswers(401);
+    const apns = apnsAnswers(200);
+    expect((await register(TOKEN_A, CJ)).status).toBe(200);
+    const res = await signedWebhook(grafanaWebhook([{ fingerprint: "f4" }]));
+    expect(await res.json()).toMatchObject({ pushed: 0, failed: 1, dropped: 0 });
+    expect(apns).toHaveLength(0);
+    expect((await call(new Request("https://relay.test/devices", { headers: credHeaders(CJ) }))).status).toBe(200);
+    expect(((await (await call(new Request("https://relay.test/devices", { headers: credHeaders(CJ) }))).json()) as { devices: unknown[] }).devices).toHaveLength(1);
   });
 });
 

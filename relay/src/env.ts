@@ -18,15 +18,26 @@ export interface Env {
   APNS_KEY_ID: string;
   WEBHOOK_SECRET?: string;
   APNS_KEY?: string;
+  /** Instead of a key of your own: the Brazier push grant (decision 0005) lends this relay a provider token.
+   *  The address is a var, the relay key it handed you is a secret. */
+  PUSH_GRANT_URL?: string;
+  PUSH_GRANT_KEY?: string;
 }
 
-export const VERSION = "0.5.0";
+export const VERSION = "0.6.0";
 
 /** Seven days, in seconds: how long a sent firing/resolved pair is remembered for dedupe. */
 export const SENT_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+/** Where provider tokens come from: our own key, a push grant, or nowhere yet. */
+export function pushSource(env: Env): "key" | "grant" | "none" {
+  if (env.APNS_KEY && env.APNS_KEY_ID && env.APNS_TEAM_ID && env.APNS_TOPIC) return "key";
+  if (env.PUSH_GRANT_URL && env.PUSH_GRANT_KEY) return "grant";
+  return "none";
+}
+
 export function apnsConfigured(env: Env): boolean {
-  return Boolean(env.APNS_KEY && env.APNS_KEY_ID && env.APNS_TEAM_ID && env.APNS_TOPIC);
+  return pushSource(env) !== "none";
 }
 
 export function json(body: unknown, status = 200, headers: Record<string, string> = {}): Response {

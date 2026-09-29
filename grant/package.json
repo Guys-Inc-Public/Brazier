@@ -1,0 +1,21 @@
+{
+  "name": "brazier-grant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Push grant for Brazier: lends a self-hosted relay a short-lived APNs provider token, so the key never leaves us.",
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "test": "vitest run",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@cloudflare/vitest-pool-workers": "^0.22.0",
+    "@cloudflare/workers-types": "^4.20260702.1",
+    "typescript": "^5.9.0",
+    "vitest": "^4.1.0",
+    "wrangler": "^4.143.0"
+  }
+}

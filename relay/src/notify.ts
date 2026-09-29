@@ -3,7 +3,7 @@ import type { Env } from "./env";
 import { SENT_TTL_SECONDS, apnsConfigured } from "./env";
 import { parseRoutes, routeUsers } from "./routing";
 import { listDevices, removeDevice, resolveUser, type Prefs } from "./devices";
-import { sendPush, type ApnsConfig } from "./apns";
+import { apnsSource, sendPush } from "./apns";
 import { inQuietHours, level, meets } from "./severity";
 
 /** The parts of Grafana's webhook body the relay reads. */
@@ -181,9 +181,7 @@ export async function deliver(env: Env, wh: GrafanaWebhook, now = new Date()): P
   const out: Outcome = { received: wh.alerts.length, pushed: 0, skipped: 0, unrouted: 0, filtered: 0, quiet: 0, dropped: 0, failed: 0, apns: apnsConfigured(env) };
   const routes = parseRoutes(env.ROUTES);
   const orgs = parseOrgs(env.ORGS);
-  const cfg: ApnsConfig | null = out.apns
-    ? { key: env.APNS_KEY as string, keyId: env.APNS_KEY_ID, teamId: env.APNS_TEAM_ID, topic: env.APNS_TOPIC }
-    : null;
+  const cfg = apnsSource(env);
 
   for (const alert of wh.alerts) {
     const orgId = orgOf(alert, wh);
@@ -208,7 +206,15 @@ export async function deliver(env: Env, wh: GrafanaWebhook, now = new Date()): P
           continue;
         }
         const soft = softened(device.prefs, severity, now);
-        const r = await sendPush(cfg, device.token, device.environment, { collapseId: alert.fingerprint, payload: soft ? quieten(payload) : payload });
+        let r;
+        try {
+          r = await sendPush(cfg, device.token, device.environment, { collapseId: alert.fingerprint, payload: soft ? quieten(payload) : payload });
+        } catch (e) {
+          // No provider token (the grant refused or is down) or Apple unreachable: the device is kept, the send is a failure.
+          out.failed++;
+          console.log(`push failed for ${user} ${device.name}: ${(e as Error).message}`);
+          continue;
+        }
         if (r.status === 200) {
           accepted++;
           out.pushed++;

@@ -14,7 +14,7 @@ Brazier app ──its Grafana credential──▶ POST /devices ──▶ that G
 | `GET /devices` | same | The caller's devices, tokens elided, each with its `prefs` |
 | `PUT /devices/:token/preferences` | same | Replaces that device's preferences (below); 404 when the token is not one of the caller's |
 | `DELETE /devices/:token` | same | Forget one device |
-| `GET /health` | none | `{ ok, version, kv, apns, webhook, grafana }` |
+| `GET /health` | none | `{ ok, version, kv, apns, push, webhook, grafana }`; `push` is `key` (an APNs key of its own), `grant` (borrowing tokens from the push grant) or `none` |
 | `GET /.well-known/brazier` | none | The Grafanas this relay serves and, per Grafana, how the app signs in through its identity provider (`SIGN_IN`), so a user only types the addresses |
 
 ## Let the app find you
@@ -29,13 +29,36 @@ The document says: `{ "relay": { "url", "version" }, "grafana": { "<origin>": { 
 
 ## Run it yourself
 
-1. Copy `wrangler.jsonc`, change `name`, `account_id`, the KV namespace id (`wrangler kv namespace create DEVICES`) and the route.
-2. Set the vars: `GRAFANA_URLS` (your Grafana's origin; the relay refuses to talk to any other), `RELAY_URL` (this relay's public address), `ROUTES` (see below), `APNS_TEAM_ID`, `APNS_TOPIC`, `APNS_KEY_ID`; `ORGS` if your Grafana has more than one organization, so the lock screen names it: `{"1":"Infrastructure","2":"Guys Inc Public"}`; and `SIGN_IN` if your Grafana signs in through an identity provider that needs a passkey or refuses in-app web views: `{"https://grafana.example.com":{"issuer":"<OIDC issuer>","clientId":"<public PKCE client for the app, redirect brazier://auth/callback>","name":"<what the button says>"}}`, with Grafana's `[auth.jwt]` pointed at that provider. The app then signs in through the system sheet and hands Grafana the ID token.
-3. `wrangler secret put WEBHOOK_SECRET` (any random string; the same value goes on the Grafana contact point) and `wrangler secret put APNS_KEY < AuthKey_XXXX.p8`.
-4. `npm install && npm test && npm run deploy`.
-5. In Grafana: a webhook contact point at `https://<relay>/grafana` with **HMAC signature** on, secret = `WEBHOOK_SECRET`, header `X-Grafana-Alerting-Signature`, timestamp header `X-Grafana-Alerting-Timestamp`; on a Grafana older than 11, use the contact point's Basic auth instead with any username and `WEBHOOK_SECRET` as the password. Point a notification policy at it.
+You need a Cloudflare account (the free plan is enough), Node 22 and about ten minutes.
 
-The APNs key belongs to the Apple developer account that ships the app. Until the push-grant service exists (milestone 4 in the build guide), a self-hosted relay needs its own build of the app under its own bundle id.
+1. Clone this repository and `cd relay`. `npm install --legacy-peer-deps`, then `npx wrangler login` (or set `CLOUDFLARE_API_TOKEN`).
+2. `npx wrangler kv namespace create DEVICES` and put the id it prints into `wrangler.jsonc`; set `account_id` to yours, `name` if you like, and the route to the hostname the relay will live on (a custom domain in a zone you have on Cloudflare, or delete the routes and use the `workers.dev` address wrangler prints).
+3. Vars in `wrangler.jsonc`: `GRAFANA_URLS` (your Grafana's origin, `https://grafana.example.com`; the relay refuses to talk to any other), `RELAY_URL` (the relay's own public address), `ROUTES` (who hears what, below; `{"*":"you@example.com"}` sends everything to one person); remove `APNS_KEY_ID` unless you have a key of your own. Optional: `ORGS` if your Grafana has more than one organization, so the lock screen names it (`{"1":"Infrastructure","2":"Guys Inc Public"}`); `SIGN_IN` if your Grafana signs in through an identity provider that needs a passkey or refuses in-app web views (`{"https://grafana.example.com":{"issuer":"<OIDC issuer>","clientId":"<public PKCE client for the app, redirect brazier://auth/callback>","name":"<what the button says>"}}`, with Grafana's `[auth.jwt]` pointed at that provider; the app then signs in through the system sheet and hands Grafana the ID token).
+4. `npx wrangler secret put WEBHOOK_SECRET`: any long random string; the same value goes on the Grafana contact point.
+5. `npm test && npx wrangler deploy`. `curl https://<relay>/health` answers `ok: true` with `push: none`.
+6. Push, one of two ways. **Without an APNs key of your own** (the usual case, next section): register with the push grant and set `PUSH_GRANT_URL` and `PUSH_GRANT_KEY`. **With your own key** (you ship your own build of the app under your own bundle id): `npx wrangler secret put APNS_KEY < AuthKey_XXXX.p8` and the vars `APNS_KEY_ID`, `APNS_TEAM_ID`, `APNS_TOPIC`.
+7. In Grafana: a webhook contact point at `https://<relay>/grafana` with **HMAC signature** on, secret = `WEBHOOK_SECRET`, header `X-Grafana-Alerting-Signature`, timestamp header `X-Grafana-Alerting-Timestamp`; on a Grafana older than 11, use the contact point's Basic auth instead with any username and `WEBHOOK_SECRET` as the password. Point a notification policy at it, with resolved messages on.
+8. Put up the signpost (previous section) so the app finds the relay from the Grafana address, or type the relay address once in the app.
+
+## Push without an APNs key of your own
+
+Apple only accepts a push for the Brazier app from a token signed with Guys Inc's key. The push grant (`grant/` in this repository, decision 0005) lends your relay such a token, fifty minutes at a time; the key never leaves Guys Inc and your alerts never pass through it. Register once, after the relay is deployed and reachable:
+
+```
+curl -X POST https://grant.brazier.gicloud.org/relays \
+  -H 'content-type: application/json' -H 'user-agent: curl' \
+  -d '{"relay":"https://<relay>"}'
+```
+
+The answer carries `relayKey`, shown once. Then:
+
+```
+npx wrangler secret put PUSH_GRANT_KEY          # the relayKey
+# wrangler.jsonc vars: "PUSH_GRANT_URL": "https://grant.brazier.gicloud.org"
+npx wrangler deploy
+```
+
+`GET /health` now says `push: grant`. The relay asks the grant for a token when it has none or when the kept one (`grant/token` in KV) is five minutes from lapsing, at most once a minute, and sends every push to Apple itself with it. If the grant is down or refuses the key, the webhook is still accepted and each send counts as `failed`; the devices stay.
 
 ## Routes
 
@@ -65,4 +88,4 @@ The webhook's answer counts `filtered` (device sends skipped by org or severity)
 
 ## Tests
 
-`npm test` runs in the Workers runtime (vitest-pool-workers): signature good, bad, tampered and missing, Grafana 13.2's own captured webhook (`test/capture.json`), device registration through a stub Grafana with token, session and OIDC credentials, unknown credentials, a Grafana not on the allow list, an unreachable one, the email alias, routing, dedupe per org, the org name on the lock screen, sandbox vs production, a 410 from Apple dropping the device, an unconfigured relay accepting webhooks without sending, severity ranking, and the preferences: validation, kept across a re-registration, replaced on PUT, the org and severity filters, and quiet hours around midnight, with a page let through, and with a zone the runtime cannot read.
+`npm test` runs in the Workers runtime (vitest-pool-workers): signature good, bad, tampered and missing, Grafana 13.2's own captured webhook (`test/capture.json`), device registration through a stub Grafana with token, session and OIDC credentials, unknown credentials, a Grafana not on the allow list, an unreachable one, the email alias, routing, dedupe per org, the org name on the lock screen, sandbox vs production, a 410 from Apple dropping the device, an unconfigured relay accepting webhooks without sending, the push grant (a borrowed token used and kept, refreshed when about to lapse, a refusal counted as a failure with the device kept), severity ranking, and the preferences: validation, kept across a re-registration, replaced on PUT, the org and severity filters, and quiet hours around midnight, with a page let through, and with a zone the runtime cannot read.
