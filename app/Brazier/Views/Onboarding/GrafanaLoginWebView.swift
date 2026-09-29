@@ -2,7 +2,8 @@ import SwiftUI
 import WebKit
 
 /// Grafana's own sign-in page, full screen, in a web view with its own throwaway cookie jar.
-/// Password or single sign-on, the page decides; the sheet only watches for the session cookie.
+/// Password or single sign-on, the page decides; a gate in front of Grafana gets its turn first. The
+/// sheet watches for Grafana's session cookie and hands back every cookie the host ended up with.
 struct GrafanaLoginSheet: View {
     let server: URL
     let onSignedIn: (_ cookie: String, _ expiry: String?, _ user: GrafanaUser) -> Void
@@ -34,7 +35,7 @@ struct GrafanaLoginSheet: View {
             if bounced {
                 HStack(alignment: .top, spacing: Brand.Space.inline) {
                     Lamp(signal: .wait).padding(.top, 5)
-                    Text("This sign-on may need a passkey, which does not work here. If it fails, go back and enter your admin's relay address, or use a token.")
+                    Text("This sign-on may need a passkey, which does not work here. If it fails, use a token, or ask your admin to publish Brazier's sign-in for this Grafana.")
                         .font(BrandFont.small).foregroundStyle(Brand.Tone.paper)
                 }
                 .padding(.horizontal, Brand.Space.card)
@@ -103,7 +104,8 @@ struct GrafanaLoginWebView: UIViewRepresentable {
             parent.status = error.localizedDescription
         }
 
-        /// A grafana_session cookie for the server's host means the page thinks we are in; /api/user decides.
+        /// A grafana_session cookie for the server's host means the page thinks we are in; /api/user decides,
+        /// asked with every cookie the host holds, so an auth proxy's cookie travels with Grafana's.
         private func check(_ webView: WKWebView) {
             guard !done, !verifying, let host = parent.server.host?.lowercased() else { return }
             let server = parent.server
@@ -112,20 +114,32 @@ struct GrafanaLoginWebView: UIViewRepresentable {
                 let mine = cookies.filter { Self.domain($0.domain, covers: host) }
                 guard let session = mine.first(where: { $0.name == "grafana_session" }), !session.value.isEmpty else { return }
                 let expiry = mine.first { $0.name == "grafana_session_expiry" }?.value
+                let header = Self.header(from: mine)
                 self.verifying = true
                 self.parent.status = "Checking the session"
                 Task { @MainActor in
                     do {
-                        let user = try await ServerProbe.user(server, credential: .cookie(session.value))
+                        let user = try await ServerProbe.user(server, credential: .cookie(header))
                         self.done = true
                         self.parent.status = "Signed in as \(user.login)"
-                        self.parent.onSignedIn(session.value, expiry, user)
+                        self.parent.onSignedIn(header, expiry, user)
                     } catch {
                         self.verifying = false
                         self.parent.status = "Not signed in yet"
                     }
                 }
             }
+        }
+
+        /// One Cookie header from the jar: the most specific domain wins when a name repeats.
+        static func header(from cookies: [HTTPCookie]) -> String {
+            var seen = Set<String>()
+            var pairs: [String] = []
+            for cookie in cookies.sorted(by: { $0.domain.count > $1.domain.count }) where !seen.contains(cookie.name) {
+                seen.insert(cookie.name)
+                pairs.append("\(cookie.name)=\(cookie.value)")
+            }
+            return pairs.joined(separator: "; ")
         }
 
         static func domain(_ domain: String, covers host: String) -> Bool {

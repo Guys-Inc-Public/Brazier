@@ -33,7 +33,11 @@ struct RelayRegistration: Decodable {
 /// What a relay publishes at /.well-known/brazier: for each Grafana it serves, how its people sign in,
 /// if the admin said. The app uses it to offer the right first button.
 struct RelayDirectory: Decodable {
-    struct Relay: Decodable { let version: String? }
+    struct Relay: Decodable {
+        let version: String?
+        /// Where the relay lives, for a document served somewhere else (the Grafana host, say).
+        let url: URL?
+    }
     struct SignIn: Decodable, Equatable {
         let issuer: URL
         let clientId: String
@@ -45,12 +49,14 @@ struct RelayDirectory: Decodable {
     let grafana: [String: Entry]?
 
     /// The entry for a Grafana origin (scheme://host[:port]), if the relay has one.
-    func signIn(for origin: String) -> SignIn? {
+    func entry(for origin: String) -> Entry? {
         guard let grafana else { return nil }
         let wanted = origin.lowercased()
         let trim = CharacterSet(charactersIn: "/")
-        return grafana.first { $0.key.lowercased().trimmingCharacters(in: trim) == wanted }?.value.signIn
+        return grafana.first { $0.key.lowercased().trimmingCharacters(in: trim) == wanted }?.value
     }
+
+    func signIn(for origin: String) -> SignIn? { entry(for: origin)?.signIn }
 }
 
 /// Device registration with the push relay. The relay verifies the caller against their own

@@ -16,7 +16,8 @@ enum GrafanaError: LocalizedError {
 
 /// A thin client over Grafana's HTTP API. No caching, no local store: every screen reads the server.
 /// Cookies are never stored by the session: the credential rides as one header, set on purpose,
-/// and a rotated session cookie goes straight to the keychain.
+/// and a rotated session cookie goes straight to the keychain. Redirects are followed inside the
+/// server's origin only, so a credential never travels to a sign-in host.
 struct GrafanaClient {
     let server: Server
     let credentials: CredentialProvider
@@ -33,8 +34,11 @@ struct GrafanaClient {
 
     // MARK: Endpoints
 
+    /// Public on Grafana itself; behind an auth proxy it needs the cookie jar like everything else.
     func health() async throws -> GrafanaHealth {
-        try await get("api/health", authenticated: false)
+        var withSession = false
+        if server.isSession { withSession = await credentials.isSignedIn(server) }
+        return try await get("api/health", authenticated: withSession)
     }
 
     func user() async throws -> GrafanaUser {
@@ -93,12 +97,17 @@ struct GrafanaClient {
         }
         let data: Data
         let response: URLResponse
-        do { (data, response) = try await Self.session.data(for: request) }
+        do { (data, response) = try await Self.session.data(for: request, delegate: SameOriginRedirects(origin: server.origin)) }
         catch let error as URLError { throw GrafanaError.transport(ServerProbe.explain(error)) }
         catch { throw GrafanaError.transport(error.localizedDescription) }
         let http = response as? HTTPURLResponse
         let status = http?.statusCode ?? 0
         if let http, server.isSession { await keepRotatedSession(from: http, url: request.url!) }
+        if authenticated, server.isSession, let http, Self.wantsFreshSignIn(http, origin: server.origin) {
+            // Sent to a sign-in page, or handed a page instead of JSON: an auth proxy's session lapsed.
+            await credentials.endSession(server)
+            throw AuthError.sessionEnded
+        }
         if status == 401, authenticated {
             if server.isSession {
                 await credentials.endSession(server)
@@ -115,12 +124,21 @@ struct GrafanaClient {
         return data
     }
 
+    /// A redirect away from Grafana's origin, or a 200 that is a page rather than JSON, is a gate in
+    /// front of Grafana asking for a sign-in; Grafana's own API answers 401 instead.
+    static func wantsFreshSignIn(_ http: HTTPURLResponse, origin: String) -> Bool {
+        if let final = http.url, ServerAddress.origin(of: final) != origin { return true }
+        if (300..<400).contains(http.statusCode) { return true }
+        if http.statusCode == 200 {
+            let type = (http.value(forHTTPHeaderField: "Content-Type") ?? "").lowercased()
+            return !type.isEmpty && !type.contains("json")
+        }
+        return false
+    }
+
     /// Grafana answers with Set-Cookie when it rotates the session; the new value is kept at once.
     private func keepRotatedSession(from http: HTTPURLResponse, url: URL) async {
-        var fields: [String: String] = [:]
-        for (key, value) in http.allHeaderFields {
-            if let key = key as? String, let value = value as? String { fields[key] = value }
-        }
+        let fields = ServerProbe.headerFields(http)
         guard fields.keys.contains(where: { $0.lowercased() == "set-cookie" }) else { return }
         let cookies = HTTPCookie.cookies(withResponseHeaderFields: fields, for: url)
         guard let session = cookies.first(where: { $0.name == "grafana_session" }), !session.value.isEmpty else { return }
